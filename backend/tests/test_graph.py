@@ -2,7 +2,8 @@ import pytest
 
 from app.core.config import settings
 from app.graph.graph import build_graph
-from app.graph.nodes.input_validation import InvalidQueryError, input_validation_node
+from app.graph.nodes.input_validation import input_validation_node
+from app.guards.input_guard import InvalidQueryError
 
 REQUIRES_LIVE_KEYS = not settings.google_api_key or not settings.tavily_api_key
 SKIP_REASON = "Requires real GOOGLE_API_KEY and TAVILY_API_KEY in .env"
@@ -33,3 +34,12 @@ def test_graph_end_to_end_student_budget():
     result = graph.invoke({"query": "laptop mong nhe cho sinh vien duoi 15 trieu"})
     recommendation = result["recommendation"]
     assert recommendation["product_name"]
+
+
+@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
+def test_graph_end_to_end_rag_only_technical_question():
+    graph = build_graph()
+    result = graph.invoke({"query": "laptop RTX 4060 co du manh cho AI development khong?"})
+    assert result.get("retrieved_docs")
+    recommendation = result["recommendation"]
+    assert recommendation["why_it_fits"]

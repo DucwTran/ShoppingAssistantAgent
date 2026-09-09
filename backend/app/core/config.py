@@ -6,17 +6,21 @@ class Settings(BaseSettings):
 
     google_api_key: str = ""
     tavily_api_key: str = ""
+    groq_api_key: str = ""
 
+    # Chat completion / structured output model
+    groq_model: str = "openai/gpt-oss-120b"
+    # Google is used only for embeddings — Groq has no embedding API
     gemini_model: str = "gemini-3.6-flash"
 
-    # Reserved for Phase 3 (Evaluation + Reflection)
+    # Reflection loop bounds
     max_reflections: int = 2
     quality_threshold: float = 0.70
 
-    # Reserved for Phase 2 (RAG)
+    # RAG chunking and embedding model
     chunk_size: int = 1000
     chunk_overlap: int = 150
-    embedding_model: str = "models/text-embedding-004"
+    embedding_model: str = "models/gemini-embedding-001"
 
 
 settings = Settings()
