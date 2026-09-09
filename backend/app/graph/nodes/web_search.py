@@ -5,7 +5,7 @@ from app.guards.tool_result_guard import filter_valid_results
 from app.tools.registry import TOOLS_BY_NAME
 
 
-def web_search_node(state: ShoppingState) -> dict:
+def _build_search_query(state: ShoppingState) -> str:
     purpose = ", ".join(state.get("purpose", []))
     budget = state.get("budget")
 
@@ -14,7 +14,17 @@ def web_search_node(state: ShoppingState) -> dict:
         query_parts.append(f"for {purpose}")
     if budget:
         query_parts.append(f"under {int(budget)} VND")
-    search_query = " ".join(query_parts)
+    return " ".join(query_parts)
+
+
+def _resolve_search_query(state: ShoppingState) -> str:
+    if state.get("reflection_count", 0) > 0 and state.get("search_query"):
+        return state["search_query"]
+    return _build_search_query(state)
+
+
+def web_search_node(state: ShoppingState) -> dict:
+    search_query = _resolve_search_query(state)
 
     tool = TOOLS_BY_NAME["web_search"]
     raw_results = call_tool(tool, query=search_query, max_results=5)

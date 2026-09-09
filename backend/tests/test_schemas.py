@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
+from app.schemas.evaluation import EvaluationResult
+from app.schemas.reflection import ReflectionDecision
 from app.schemas.requirements import ShoppingRequirements
 
 
@@ -26,3 +28,33 @@ def test_shopping_requirements_full():
 def test_shopping_requirements_requires_category():
     with pytest.raises(ValidationError):
         ShoppingRequirements()
+
+
+def test_evaluation_result_accepts_valid_score():
+    result = EvaluationResult(score=0.7, passed=True, feedback="Solid match on budget and purpose.")
+    assert result.score == 0.7
+
+
+def test_evaluation_result_rejects_score_above_one():
+    with pytest.raises(ValidationError):
+        EvaluationResult(score=1.5, passed=True, feedback="")
+
+
+def test_evaluation_result_rejects_negative_score():
+    with pytest.raises(ValidationError):
+        EvaluationResult(score=-0.1, passed=False, feedback="")
+
+
+def test_reflection_decision_accepts_valid_input():
+    decision = ReflectionDecision(
+        reflection_reason="Missing battery life info",
+        use_web=True,
+        use_rag=False,
+        refined_query="battery life comparison for top candidates",
+    )
+    assert decision.use_web is True
+
+
+def test_reflection_decision_rejects_empty_refined_query():
+    with pytest.raises(ValidationError):
+        ReflectionDecision(reflection_reason="x", use_web=True, use_rag=False, refined_query="")
