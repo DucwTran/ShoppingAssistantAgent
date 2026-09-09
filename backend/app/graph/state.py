@@ -45,5 +45,4 @@ class ShoppingState(TypedDict, total=False):
     recommendation: dict
 
     # Session
-    thread_id: str
     log: list[dict[str, Any]]

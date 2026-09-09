@@ -1,6 +1,6 @@
 # AI Shopping Assistant — Backend
 
-Phase 3/7 của roadmap: LangGraph Agent Core + RAG + Router + Guards + Evaluation/Reflection loop, chạy qua CLI (chưa có FastAPI/HITL/Streaming — xem `reference/initial_plan.md` ở thư mục gốc và roadmap 7 phase).
+Phase 4/7 của roadmap: LangGraph Agent Core + RAG + Router + Guards + Evaluation/Reflection loop + Human-in-the-loop approval, chạy qua CLI (chưa có FastAPI/Streaming — xem `reference/initial_plan.md` ở thư mục gốc và roadmap 7 phase).
 
 ## Setup
 
@@ -38,7 +38,9 @@ python -m app.cli "RTX 4060 có đủ cho AI development không?"
 
 Câu hỏi kỹ thuật thuần (không cần sản phẩm cụ thể) sẽ được Router định tuyến qua RAG, `recommend` trả lời dựa trên kiến thức trong `data/knowledge/` thay vì so sánh sản phẩm (`product_name: "N/A"`).
 
-Sau `recommend`, `evaluator` tự chấm điểm chất lượng khuyến nghị (0-1). Nếu điểm dưới `quality_threshold` (mặc định 0.70), `reflection` sẽ tìm ra chỗ thiếu cụ thể và search/retrieve lại có mục tiêu, tối đa `max_reflections` (mặc định 2) lần trước khi trả kết quả tốt nhất hiện có kèm cảnh báo. CLI in thêm `Quality score` và ghi chú nếu chưa đạt chuẩn.
+Sau `recommend`, `evaluator` tự chấm điểm chất lượng khuyến nghị (0-1). Nếu điểm dưới `quality_threshold` (mặc định 0.70), `reflection` sẽ tìm ra chỗ thiếu cụ thể và search/retrieve lại có mục tiêu, tối đa `max_reflections` (mặc định 2) lần trước khi trả kết quả tốt nhất hiện có kèm cảnh báo.
+
+Trước khi kết thúc, CLI luôn dừng lại hỏi bạn duyệt recommendation (`Approve this recommendation? [y/n]`) — kể cả khi đã đạt `quality_threshold`. Gõ `n` rồi nhập góp ý sẽ khiến agent tạo lại recommendation theo đúng góp ý đó và hỏi duyệt lại, lặp tới khi bạn approve. Sau khi approve, CLI in `Final recommendation` kèm `Quality score`/cảnh báo nếu có.
 
 ## Chạy eval offline (golden queries)
 
@@ -54,7 +56,7 @@ Chạy graph qua một bộ câu hỏi mẫu cố định, in `quality_score`/`r
 pytest -v
 ```
 
-Các test cần gọi Groq/Tavily/Gemini thật (`test_router.py`, `test_rag.py`, phần lớn `test_graph.py`) sẽ tự skip nếu `.env` chưa có đủ `GOOGLE_API_KEY`/`TAVILY_API_KEY`/`GROQ_API_KEY`; sẽ chạy đầy đủ khi đã điền key (miễn còn quota).
+Các test cần gọi Groq/Tavily/Gemini thật (`test_router.py`, `test_rag.py`, phần lớn `test_graph.py`) sẽ tự skip nếu `.env` chưa có đủ `GOOGLE_API_KEY`/`TAVILY_API_KEY`/`GROQ_API_KEY`; sẽ chạy đầy đủ khi đã điền key (miễn còn quota). `test_checkpointer.py` và `test_human_approval.py` không cần key nào — human-in-the-loop node không gọi LLM.
 
 ## Cấu trúc
 
@@ -62,4 +64,4 @@ Xem chi tiết trong `reference/mapping.md` ở thư mục gốc. Thư mục `ap
 
 ## Roadmap
 
-Phase 1 ✅ → Phase 2 ✅ (RAG + Router + Guards) → Phase 3 (Evaluation + Reflection, hiện tại) → Phase 4 (HITL + Checkpoint) → Phase 5 (FastAPI + Streaming) → Phase 6 (React Chatbot UI) → Phase 7 (Docker).
+Phase 1 ✅ → Phase 2 ✅ (RAG + Router + Guards) → Phase 3 ✅ (Evaluation + Reflection) → Phase 4 (HITL + Checkpoint, hiện tại) → Phase 5 (FastAPI + Streaming) → Phase 6 (React Chatbot UI) → Phase 7 (Docker).

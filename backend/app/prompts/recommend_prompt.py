@@ -14,4 +14,9 @@ points), based only on the knowledge snippets. tradeoffs can be empty.
 Base confidence (0-1) on how well the available data (products and/or knowledge) supports the answer; lower
 it when key specs are "unknown" or knowledge snippets are missing/irrelevant.
 Never invent specifications or facts that are not present in the given products or knowledge snippets.
+
+If human_feedback is present and non-null, a person already reviewed a previous recommendation and asked for
+a specific change (e.g. "prefer AMD GPU", "too expensive, show something cheaper"). Prioritize satisfying that
+request using the available products/knowledge, while still respecting budget/constraints and never inventing
+specs. If no candidate can satisfy the feedback, say so plainly in tradeoffs rather than pretending it fits.
 """

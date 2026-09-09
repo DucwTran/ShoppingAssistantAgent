@@ -1,9 +1,11 @@
 from langgraph.graph import END, START, StateGraph
 
+from app.core.checkpointer import get_checkpointer
 from app.core.config import settings
 from app.core.events import emit
 from app.graph.nodes.analyzer import analyzer_node
 from app.graph.nodes.evaluator import evaluator_node
+from app.graph.nodes.human_approval import human_approval_node
 from app.graph.nodes.input_validation import input_validation_node
 from app.graph.nodes.metadata import metadata_node
 from app.graph.nodes.normalize import normalize_node
@@ -30,10 +32,10 @@ def _route_after_evaluator(state: ShoppingState) -> str:
 
     if quality_score >= settings.quality_threshold:
         branch = "proceed"
-        next_node = END
+        next_node = "human_approval"
     elif reflection_count >= settings.max_reflections:
         branch = "degrade"
-        next_node = END
+        next_node = "human_approval"
     else:
         branch = "reflect"
         next_node = "reflection"
@@ -49,6 +51,10 @@ def _route_after_evaluator(state: ShoppingState) -> str:
     return next_node
 
 
+def _route_after_human_approval(state: ShoppingState) -> str:
+    return END if state.get("human_approval") else "recommend"
+
+
 def build_graph():
     graph = StateGraph(ShoppingState)
     graph.add_node("input_validation", input_validation_node)
@@ -61,6 +67,7 @@ def build_graph():
     graph.add_node("recommend", recommend_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("reflection", reflection_node)
+    graph.add_node("human_approval", human_approval_node)
 
     graph.add_edge(START, "input_validation")
     graph.add_edge("input_validation", "metadata")
@@ -71,7 +78,8 @@ def build_graph():
     graph.add_edge("rag", "normalize")
     graph.add_edge("normalize", "recommend")
     graph.add_edge("recommend", "evaluator")
-    graph.add_conditional_edges("evaluator", _route_after_evaluator, ["reflection", END])
+    graph.add_conditional_edges("evaluator", _route_after_evaluator, ["reflection", "human_approval"])
     graph.add_conditional_edges("reflection", _route_by_source_flags, ["web_search", "rag"])
+    graph.add_conditional_edges("human_approval", _route_after_human_approval, ["recommend", END])
 
-    return graph.compile()
+    return graph.compile(checkpointer=get_checkpointer())
