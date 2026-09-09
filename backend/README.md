@@ -1,6 +1,6 @@
 # AI Shopping Assistant — Backend
 
-Phase 4/7 của roadmap: LangGraph Agent Core + RAG + Router + Guards + Evaluation/Reflection loop + Human-in-the-loop approval, chạy qua CLI (chưa có FastAPI/Streaming — xem `reference/initial_plan.md` ở thư mục gốc và roadmap 7 phase).
+Phase 5/7 của roadmap: LangGraph Agent Core + RAG + Router + Guards + Evaluation/Reflection loop + Human-in-the-loop approval + FastAPI JSON API (đồng bộ, không streaming), chạy qua CLI hoặc HTTP — xem `reference/initial_plan.md` ở thư mục gốc và roadmap 7 phase.
 
 ## Setup
 
@@ -42,6 +42,28 @@ Sau `recommend`, `evaluator` tự chấm điểm chất lượng khuyến nghị
 
 Trước khi kết thúc, CLI luôn dừng lại hỏi bạn duyệt recommendation (`Approve this recommendation? [y/n]`) — kể cả khi đã đạt `quality_threshold`. Gõ `n` rồi nhập góp ý sẽ khiến agent tạo lại recommendation theo đúng góp ý đó và hỏi duyệt lại, lặp tới khi bạn approve. Sau khi approve, CLI in `Final recommendation` kèm `Quality score`/cảnh báo nếu có.
 
+## Chạy thử (API demo)
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Cùng logic HITL như CLI nhưng qua HTTP, đồng bộ (mỗi request chạy hết graph phía server rồi mới trả response, không streaming):
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/shopping/query \
+     -H "Content-Type: application/json" \
+     -d '{"query": "laptop duoi 25 trieu cho lap trinh AI va gaming"}'
+# → { "thread_id": "...", "status": "pending_approval", "data": {...} }
+
+curl -X POST http://127.0.0.1:8000/api/v1/shopping/resume/<thread_id> \
+     -H "Content-Type: application/json" \
+     -d '{"approved": true, "feedback": null}'
+# → { "thread_id": "...", "status": "done", "data": {...} }
+```
+
+`approved: false` kèm `feedback` sẽ tạo lại recommendation rồi trả `status: "pending_approval"` lần nữa — lặp `POST /resume` tới khi `status == "done"`. Lỗi trả `{"error": {"code", "message"}}`: 400 (query không hợp lệ), 404 (`thread_id` không tồn tại), 409 (thread đã xong, không còn gì để resume).
+
 ## Chạy eval offline (golden queries)
 
 ```bash
@@ -56,12 +78,12 @@ Chạy graph qua một bộ câu hỏi mẫu cố định, in `quality_score`/`r
 pytest -v
 ```
 
-Các test cần gọi Groq/Tavily/Gemini thật (`test_router.py`, `test_rag.py`, phần lớn `test_graph.py`) sẽ tự skip nếu `.env` chưa có đủ `GOOGLE_API_KEY`/`TAVILY_API_KEY`/`GROQ_API_KEY`; sẽ chạy đầy đủ khi đã điền key (miễn còn quota). `test_checkpointer.py` và `test_human_approval.py` không cần key nào — human-in-the-loop node không gọi LLM.
+Các test cần gọi Groq/Tavily/Gemini thật (`test_router.py`, `test_rag.py`, phần lớn `test_graph.py` và `test_api.py`) sẽ tự skip nếu `.env` chưa có đủ `GOOGLE_API_KEY`/`TAVILY_API_KEY`/`GROQ_API_KEY`; sẽ chạy đầy đủ khi đã điền key (miễn còn quota). `test_checkpointer.py`, `test_human_approval.py`, và các case lỗi 400/404 trong `test_api.py` không cần key nào.
 
 ## Cấu trúc
 
-Xem chi tiết trong `reference/mapping.md` ở thư mục gốc. Thư mục `api/` hiện vẫn là placeholder rỗng, sẽ được implement ở Phase 5.
+Xem chi tiết trong `reference/mapping.md` ở thư mục gốc.
 
 ## Roadmap
 
-Phase 1 ✅ → Phase 2 ✅ (RAG + Router + Guards) → Phase 3 ✅ (Evaluation + Reflection) → Phase 4 (HITL + Checkpoint, hiện tại) → Phase 5 (FastAPI + Streaming) → Phase 6 (React Chatbot UI) → Phase 7 (Docker).
+Phase 1 ✅ → Phase 2 ✅ (RAG + Router + Guards) → Phase 3 ✅ (Evaluation + Reflection) → Phase 4 ✅ (HITL + Checkpoint) → Phase 5 (FastAPI JSON API, hiện tại) → Phase 6 (React Chatbot UI) → Phase 7 (Docker).
