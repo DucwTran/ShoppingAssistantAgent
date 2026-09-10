@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.graph.graph import (
     _route_after_evaluator,
     _route_after_human_approval,
+    _route_after_intent,
     _route_by_source_flags,
     build_graph,
 )
@@ -43,6 +44,15 @@ def test_build_graph_includes_evaluation_and_reflection_nodes():
     assert "evaluator" in node_names
     assert "reflection" in node_names
     assert "human_approval" in node_names
+    assert "intent" in node_names
+
+
+def test_route_after_intent_shopping_goes_to_metadata():
+    assert _route_after_intent({"intent": "shopping"}) == "metadata"
+
+
+def test_route_after_intent_general_ends():
+    assert _route_after_intent({"intent": "general"}) == END
 
 
 def test_route_by_source_flags_web_only():

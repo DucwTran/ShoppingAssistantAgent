@@ -20,6 +20,7 @@ def _response_from_invoke_result(thread_id: str, result: dict) -> ShoppingRespon
         quality_score=result.get("quality_score"),
         evaluation_feedback=result.get("evaluation_feedback"),
         reflection_count=result.get("reflection_count", 0),
+        general_reply=result.get("general_reply"),
     )
     return ShoppingResponse(thread_id=thread_id, status="done", data=data)
 

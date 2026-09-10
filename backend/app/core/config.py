@@ -7,9 +7,11 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     tavily_api_key: str = ""
     groq_api_key: str = ""
+    openai_api_key: str = ""
 
-    # Chat completion / structured output model
+    # Chat completion / structured output model — active provider is chosen in core/llm.py
     groq_model: str = "openai/gpt-oss-120b"
+    openai_model: str = "gpt-5.4-mini"
     # Google is used only for embeddings — Groq has no embedding API
     gemini_model: str = "gemini-3.6-flash"
 

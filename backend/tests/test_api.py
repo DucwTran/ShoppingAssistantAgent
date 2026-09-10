@@ -20,11 +20,15 @@ def test_query_rejects_empty_query():
     assert body["error"]["code"] == "invalid_query"
 
 
-def test_query_rejects_off_topic_query():
+@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
+def test_query_off_topic_returns_general_reply():
     with TestClient(app) as client:
         response = client.post("/api/v1/shopping/query", json={"query": "hello there"})
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_query"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "done"
+    assert body["data"]["recommendation"] is None
+    assert body["data"]["general_reply"]
 
 
 def test_resume_unknown_thread_returns_404():

@@ -14,6 +14,7 @@ export interface ShoppingResultData {
   quality_score: number | null
   evaluation_feedback: string | null
   reflection_count: number
+  general_reply: string | null
 }
 
 export interface ShoppingResponse {

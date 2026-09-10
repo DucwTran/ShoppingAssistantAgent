@@ -11,9 +11,8 @@ def test_input_guard_rejects_empty():
         validate_input("   ")
 
 
-def test_input_guard_rejects_off_topic():
-    with pytest.raises(InvalidQueryError):
-        validate_input("hom nay thoi tiet the nao?")
+def test_input_guard_accepts_off_topic_text():
+    assert validate_input("hom nay thoi tiet the nao?") == "hom nay thoi tiet the nao?"
 
 
 def test_input_guard_accepts_relevant_query():

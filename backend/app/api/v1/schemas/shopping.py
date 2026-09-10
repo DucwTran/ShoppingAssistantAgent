@@ -17,6 +17,7 @@ class ShoppingResultData(BaseModel):
     quality_score: float | None
     evaluation_feedback: str | None
     reflection_count: int = 0
+    general_reply: str | None = None
 
 
 class ShoppingResponse(BaseModel):

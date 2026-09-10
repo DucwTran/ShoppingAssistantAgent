@@ -16,7 +16,7 @@ class ShoppingState(TypedDict, total=False):
     constraints: list[str]
 
     # Query analysis / routing
-    intent: str
+    intent: str  # "shopping" or "general", set by intent_node
     use_web: bool
     use_rag: bool
 
@@ -43,6 +43,7 @@ class ShoppingState(TypedDict, total=False):
 
     # Final result
     recommendation: dict
+    general_reply: str | None
 
     # Session
     log: list[dict[str, Any]]

@@ -7,6 +7,7 @@ from app.graph.nodes.analyzer import analyzer_node
 from app.graph.nodes.evaluator import evaluator_node
 from app.graph.nodes.human_approval import human_approval_node
 from app.graph.nodes.input_validation import input_validation_node
+from app.graph.nodes.intent import intent_node
 from app.graph.nodes.metadata import metadata_node
 from app.graph.nodes.normalize import normalize_node
 from app.graph.nodes.rag import rag_node
@@ -55,9 +56,14 @@ def _route_after_human_approval(state: ShoppingState) -> str:
     return END if state.get("human_approval") else "recommend"
 
 
+def _route_after_intent(state: ShoppingState) -> str:
+    return "metadata" if state.get("intent") == "shopping" else END
+
+
 def build_graph():
     graph = StateGraph(ShoppingState)
     graph.add_node("input_validation", input_validation_node)
+    graph.add_node("intent", intent_node)
     graph.add_node("metadata", metadata_node)
     graph.add_node("analyzer", analyzer_node)
     graph.add_node("router", router_node)
@@ -70,7 +76,8 @@ def build_graph():
     graph.add_node("human_approval", human_approval_node)
 
     graph.add_edge(START, "input_validation")
-    graph.add_edge("input_validation", "metadata")
+    graph.add_edge("input_validation", "intent")
+    graph.add_conditional_edges("intent", _route_after_intent, ["metadata", END])
     graph.add_edge("metadata", "analyzer")
     graph.add_edge("analyzer", "router")
     graph.add_conditional_edges("router", _route_by_source_flags, ["web_search", "rag"])

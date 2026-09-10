@@ -1,3 +1,4 @@
+import { AssistantMessage } from "./components/AssistantMessage"
 import { ChatWindow } from "./components/ChatWindow"
 import { ErrorBanner } from "./components/ErrorBanner"
 import { FinalRecommendationMessage } from "./components/FinalRecommendationMessage"
@@ -79,6 +80,9 @@ function TurnView({ turn, isLatest, phase, conversation }: TurnViewProps) {
       return <p className="text-sm text-red-400 italic">Error: {turn.message}</p>
 
     case "agent_result":
+      if (turn.data.general_reply) {
+        return <AssistantMessage text={turn.data.general_reply} />
+      }
       if (turn.status === "done") {
         return <FinalRecommendationMessage data={turn.data} />
       }

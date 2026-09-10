@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.evaluation import EvaluationResult
+from app.schemas.intent import IntentDecision
 from app.schemas.reflection import ReflectionDecision
 from app.schemas.requirements import ShoppingRequirements
 
@@ -58,3 +59,14 @@ def test_reflection_decision_accepts_valid_input():
 def test_reflection_decision_rejects_empty_refined_query():
     with pytest.raises(ValidationError):
         ReflectionDecision(reflection_reason="x", use_web=True, use_rag=False, refined_query="")
+
+
+def test_intent_decision_shopping_has_no_reply():
+    decision = IntentDecision(is_shopping_related=True, reply=None)
+    assert decision.reply is None
+
+
+def test_intent_decision_general_has_reply():
+    decision = IntentDecision(is_shopping_related=False, reply="Hi! I'm a laptop shopping assistant.")
+    assert decision.is_shopping_related is False
+    assert decision.reply == "Hi! I'm a laptop shopping assistant."
