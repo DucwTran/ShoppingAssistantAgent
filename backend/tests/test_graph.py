@@ -45,6 +45,7 @@ def test_build_graph_includes_evaluation_and_reflection_nodes():
     assert "reflection" in node_names
     assert "human_approval" in node_names
     assert "intent" in node_names
+    assert "comparison" in node_names
 
 
 def test_route_after_intent_shopping_goes_to_metadata():

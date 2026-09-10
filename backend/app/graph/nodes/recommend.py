@@ -17,6 +17,7 @@ def recommend_node(state: ShoppingState) -> dict:
             "constraints": state.get("constraints", []),
         },
         "products": state.get("products", []),
+        "comparison": state.get("comparison", {}),
         "knowledge": state.get("retrieved_docs", []),
         "human_feedback": state.get("human_feedback"),
     }

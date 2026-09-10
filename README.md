@@ -1,18 +1,15 @@
 # AI Shopping Assistant Agent
 
-An agentic laptop-shopping assistant built from scratch on **LangGraph**: it extracts structured requirements from a natural-language request, decides whether to search the live web and/or a local knowledge base, self-evaluates and refines its own recommendation, then pauses for human approval before finalizing — all served over a FastAPI backend with a React chat frontend.
-
-This is a personal engineering project built incrementally, one verified step at a time, to understand how production-grade agent systems are actually assembled — graph orchestration, guardrails, self-correction loops, human-in-the-loop control, and the API/UI layers around them — rather than treating a single LLM call as the whole system.
+An agentic laptop-shopping assistant built on **LangGraph**: it extracts requirements from a natural-language request, searches the web and/or a local knowledge base, self-evaluates and refines its own recommendation, then pauses for human approval before finalizing — served via a FastAPI backend with a React chat frontend.
 
 ## Why this project
 
-Most "AI agent" demos are a single LLM call with tool access. This one is closer to how an agent needs to behave in a real product:
+Most "AI agent" demos are a single LLM call with tool access. This one behaves closer to a real product:
 
-- **It doesn't trust its own first answer.** A dedicated evaluator node scores every recommendation against explicit criteria (budget fit, purpose fit, evidence from retrieved data, internal consistency). Below threshold, a reflection node diagnoses *specifically* what's missing and triggers a targeted re-search — not a blind retry — bounded to a fixed number of attempts with graceful degradation if it still can't clear the bar.
-- **It doesn't act unilaterally.** Every recommendation — whether it passed evaluation or was degraded after exhausting retries — pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism before the conversation can end. Rejecting with feedback loops the agent back through recommendation and evaluation again.
-- **It's resumable, not just conversational.** State is checkpointed per `thread_id`; approval/rejection happens over separate HTTP calls (`POST /query` then one or more `POST /resume/{thread_id}`), the same way a real backend would handle an interrupted workflow across requests.
-- **It knows when it isn't being asked to shop.** A classification node routes greetings and off-topic questions to a short, friendly reply instead of running the full pipeline or hard-rejecting the request.
-- **It validates at every boundary.** Input guardrails reject empty queries before they reach the LLM; tool arguments are schema-validated before a paid API call is made; tool results are filtered for missing required fields before they can pollute downstream state — no silently fabricated data.
+- **Self-correcting**: an evaluator scores every recommendation against explicit criteria; below threshold, a reflection node diagnoses what's missing and triggers a targeted re-search, bounded to a fixed number of attempts.
+- **Not unilateral**: every recommendation pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism — rejecting with feedback sends it back through recommendation and evaluation again.
+- **Resumable, not just conversational**: state is checkpointed per `thread_id`; approval happens over separate HTTP calls (`POST /query`, then `POST /resume/{thread_id}`), not a single request/response turn.
+- **Validated at every boundary**: guardrails reject bad input before it reaches the LLM, validate tool arguments before a paid API call, and filter incomplete tool results before they can corrupt state.
 
 ## Architecture
 
@@ -28,7 +25,8 @@ flowchart TD
     RT -->|use_rag| RAG[rag]
     WS --> NORM[normalize]
     RAG --> NORM
-    NORM --> REC["recommend (LLM)"]
+    NORM --> CMP[comparison]
+    CMP --> REC["recommend (LLM)"]
     REC --> EV["evaluator (LLM)"]
     EV -->|score above threshold| HA[human_approval]
     EV -->|below threshold, retries left| REFL["reflection (LLM)"]
@@ -39,17 +37,17 @@ flowchart TD
     HA -->|rejected + feedback| REC
 ```
 
-`human_approval` is an `interrupt()` — the graph literally suspends execution and persists state via a LangGraph checkpointer until a `Command(resume=...)` is delivered, potentially in a completely separate process/request. The `intent` node runs first and short-circuits straight to `END` for non-shopping messages, so a "hi" gets a normal reply instead of a hard rejection or a full pipeline run.
+`human_approval` is an `interrupt()` — the graph literally suspends execution and persists state via a LangGraph checkpointer until a `Command(resume=...)` is delivered, potentially in a completely separate process/request. The `intent` node runs first and short-circuits straight to `END` for non-shopping messages, so a "hi" gets a normal reply instead of a hard rejection or a full pipeline run. `comparison` is a plain Python step (no LLM call) that runs a registered tool to identify the cheapest/most expensive candidate whenever there are 2+ products, giving `recommend` a grounded fact instead of an eyeballed guess.
 
-## Highlights (engineering decisions worth knowing about)
+## Highlights
 
-- **Self-correcting quality loop**: evaluator and reflection are separate nodes with a single responsibility each — the evaluator only scores, a dedicated conditional edge function owns the routing decision (proceed / reflect / degrade), because it's the only place with both `quality_score` and `reflection_count` available to decide.
-- **Human-in-the-loop with real checkpointing**, not a fake "confirm" button: built on LangGraph's `interrupt()` + `InMemorySaver`, with a synchronous FastAPI layer (`/query`, `/resume/{thread_id}`) on top — verified that resuming an unknown or already-completed `thread_id` does **not** raise in LangGraph, and added explicit `get_state()` validation (404 / 409) before ever attempting a resume.
-- **Guardrails at every boundary**: input validation, tool-argument validation, and tool-result filtering are each isolated modules the nodes call into — never inline logic — so a bad LLM output or a malformed tool response can't silently corrupt state.
-- **Bounded retry for structured output**: LLM tool-calling occasionally omits a required field; a shared `invoke_structured()` helper retries a bounded number of times instead of every node reimplementing its own retry logic.
-- **RAG and web search converge through one synchronization point**: LangGraph only joins fan-out branches that complete in the same superstep — an early version routed the RAG branch directly to `recommend` while the web-search branch went through an extra `normalize` hop, which silently double-invoked downstream nodes when both sources were active. Fixed by giving both branches equal hop-count into a single convergence node.
-- **Consistent error contract across the API**: FastAPI's default `HTTPException` body doesn't match a custom error envelope automatically — a dedicated exception handler reshapes every error path (validation, HTTP, unexpected 500s) into the same `{"error": {"code", "message"}}` shape.
-- **Swappable LLM provider, no rewiring**: `core/llm.py` has a single `get_llm()` factory; every node goes through it, so switching between providers (e.g. Groq and OpenAI, to work around a free-tier daily quota) is a one-function change, not a codebase-wide edit.
+- **Self-correcting quality loop**: an evaluator scores each recommendation; a separate conditional edge decides proceed/reflect/degrade based on the score and retry count.
+- **Real human-in-the-loop**: built on LangGraph's `interrupt()` + checkpointing, not a fake "confirm" button — approval happens over separate HTTP calls, validated against actual graph state (404/409) before resuming.
+- **Guardrails at every boundary**: input, tool-argument, and tool-result validation are isolated modules, never inline logic.
+- **Bounded retry for structured output**: a shared `invoke_structured()` helper retries LLM calls that omit a required field, instead of every node reimplementing its own retry logic.
+- **One synchronization point for fan-out**: LangGraph only joins branches that complete in the same superstep — fixed an early bug where uneven hop-counts silently double-invoked downstream nodes.
+- **Consistent error contract**: a dedicated exception handler reshapes every error path — validation, HTTP, unexpected 500s — into the same `{"error": {"code", "message"}}` shape.
+- **Swappable LLM provider**: a single `get_llm()` factory lets every node switch between Groq and OpenAI with a one-function change.
 
 ## Tech stack
 
@@ -64,7 +62,7 @@ flowchart TD
 | Backend API | FastAPI + Uvicorn (synchronous JSON, no streaming) |
 | Frontend | React 19 + TypeScript + Vite, Tailwind CSS |
 | Language detection | py3langid |
-| Testing | pytest (61 tests: schemas, guards, RAG, graph routing, HITL/checkpoint, API) |
+| Testing | pytest (73 tests: schemas, guards, RAG, graph routing, HITL/checkpoint, API) |
 
 ## Project structure
 
@@ -74,7 +72,7 @@ backend/app/
 ├── main.py            FastAPI app factory (lifespan-managed graph singleton, CORS, exception handlers)
 ├── core/               Shared infrastructure: config, LLM factory, structured-output retry, logging/events, checkpointer
 ├── graph/              ShoppingState schema, build_graph(), and one file per node (incl. intent classification)
-├── tools/              External tool registry (Tavily search) — validated, single point of truth
+├── tools/              External tool registry (web search, product comparison, currency conversion) — validated, single point of truth
 ├── guards/             Input / tool-argument / tool-result validation, isolated from node logic
 ├── rag/                Ingestion, embeddings, vector store, retrieval — independent of the graph
 ├── prompts/            One prompt file per LLM-backed node
@@ -104,12 +102,12 @@ cp .env.example .env
 
 Fill in `.env`:
 
-| Key | Used for | Get it from |
-|---|---|---|
-| `GOOGLE_API_KEY` | RAG embeddings | [Google AI Studio](https://aistudio.google.com/apikey) |
-| `TAVILY_API_KEY` | Web search | [tavily.com](https://tavily.com) (free tier) |
-| `GROQ_API_KEY` | Chat / structured output | [console.groq.com/keys](https://console.groq.com/keys) |
-| `OPENAI_API_KEY` | Chat / structured output (alternate provider) | [platform.openai.com](https://platform.openai.com) |
+| Key | Used for |
+|---|---|
+| `GOOGLE_API_KEY` | RAG embeddings |
+| `TAVILY_API_KEY` | Web search |
+| `GROQ_API_KEY` | Chat / structured output |
+| `OPENAI_API_KEY` | Chat / structured output (alternate provider) |
 
 Build the RAG index (drop `.pdf`/`.md` files into `data/knowledge/` first):
 
@@ -163,22 +161,3 @@ npm run dev
 ```
 
 Open the printed local URL with the backend running — the chat UI talks to it exclusively through `/api/v1/shopping/*`.
-
-## Roadmap
-
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Agent core: state/graph/nodes, structured output, tool calling, CLI | Done |
-| 2 | RAG (Qdrant), router, input/tool guardrails | Done |
-| 3 | Self-evaluation + bounded reflection loop | Done |
-| 4 | Human-in-the-loop approval + checkpoint/resume | Done |
-| 5 | FastAPI JSON API (synchronous, no streaming) | Done |
-| 6 | React chatbot frontend | Code complete, manual browser verification in progress |
-| — | Intent classification node (general chat vs. shopping) | Done |
-| 7 | Docker packaging | Planned |
-
-SSE/streaming responses and a message-queue-based worker architecture were deliberately scoped out of the MVP — the event system (`core/events.emit()`) that every node already reports through was designed so either can be added later without touching node logic.
-
-## License
-
-Personal learning project — no license file yet; ask before reusing.

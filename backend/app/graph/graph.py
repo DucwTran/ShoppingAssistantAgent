@@ -4,6 +4,7 @@ from app.core.checkpointer import get_checkpointer
 from app.core.config import settings
 from app.core.events import emit
 from app.graph.nodes.analyzer import analyzer_node
+from app.graph.nodes.comparison import comparison_node
 from app.graph.nodes.evaluator import evaluator_node
 from app.graph.nodes.human_approval import human_approval_node
 from app.graph.nodes.input_validation import input_validation_node
@@ -70,6 +71,7 @@ def build_graph():
     graph.add_node("web_search", web_search_node)
     graph.add_node("rag", rag_node)
     graph.add_node("normalize", normalize_node)
+    graph.add_node("comparison", comparison_node)
     graph.add_node("recommend", recommend_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("reflection", reflection_node)
@@ -83,7 +85,8 @@ def build_graph():
     graph.add_conditional_edges("router", _route_by_source_flags, ["web_search", "rag"])
     graph.add_edge("web_search", "normalize")
     graph.add_edge("rag", "normalize")
-    graph.add_edge("normalize", "recommend")
+    graph.add_edge("normalize", "comparison")
+    graph.add_edge("comparison", "recommend")
     graph.add_edge("recommend", "evaluator")
     graph.add_conditional_edges("evaluator", _route_after_evaluator, ["reflection", "human_approval"])
     graph.add_conditional_edges("reflection", _route_by_source_flags, ["web_search", "rag"])

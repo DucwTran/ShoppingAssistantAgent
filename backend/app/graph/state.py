@@ -27,7 +27,7 @@ class ShoppingState(TypedDict, total=False):
 
     # Product processing
     products: list
-    comparison: list
+    comparison: dict  # cheapest/most_expensive summary set by comparison_node when there are >=2 products
 
     # Evaluation
     quality_score: float
