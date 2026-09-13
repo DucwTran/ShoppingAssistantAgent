@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { QUALITY_WARNING_THRESHOLD } from "../lib/format"
 import type { ShoppingResultData } from "../types/shopping"
 import { RecommendationCard } from "./RecommendationCard"
 
@@ -16,7 +15,7 @@ export function PendingApprovalMessage({ data, onApprove, onReject, busy }: Pend
 
   if (!data.recommendation) return null
 
-  const isLowQuality = data.quality_score !== null && data.quality_score < QUALITY_WARNING_THRESHOLD
+  const isLowQuality = data.quality_score !== null && data.quality_score < data.quality_threshold
 
   return (
     <div className="max-w-[80%] space-y-3">

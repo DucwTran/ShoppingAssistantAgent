@@ -19,7 +19,6 @@ class ShoppingState(TypedDict, total=False):
     intent: str  # "shopping" or "general", set by intent_node
 
     # Retrieval
-    search_query: str  # refined research focus set by reflection_node for the next research_agent call
     retrieved_docs: list
 
     # Product processing
@@ -28,10 +27,6 @@ class ShoppingState(TypedDict, total=False):
     # Evaluation
     quality_score: float
     evaluation_feedback: str
-
-    # Reflection
-    reflection_count: int
-    reflection_reason: str
 
     # Human-in-the-loop
     human_approval: bool | None

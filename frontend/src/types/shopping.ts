@@ -12,8 +12,8 @@ export interface Recommendation {
 export interface ShoppingResultData {
   recommendation: Recommendation | null
   quality_score: number | null
+  quality_threshold: number
   evaluation_feedback: string | null
-  reflection_count: number
   general_reply: string | null
 }
 

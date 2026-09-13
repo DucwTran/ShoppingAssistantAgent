@@ -44,14 +44,11 @@ def main() -> None:
     print(json.dumps(result.get("recommendation", {}), ensure_ascii=False, indent=2))
 
     quality_score = result.get("quality_score")
-    reflection_count = result.get("reflection_count", 0)
 
     if quality_score is not None:
         print(f"\nQuality score: {quality_score:.2f} (threshold {settings.quality_threshold:.2f})")
-        if reflection_count:
-            print(f"Reflections performed: {reflection_count}")
         if quality_score < settings.quality_threshold:
-            print("Note: quality bar not fully met after reflection - treat as unverified:")
+            print("Note: quality bar not met - treat as unverified:")
             print(f"  - {result.get('evaluation_feedback', '')}")
 
 

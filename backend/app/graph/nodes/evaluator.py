@@ -34,7 +34,6 @@ def evaluator_node(state: ShoppingState) -> dict:
         "Recommendation quality evaluated",
         node="evaluator",
         score=result.score,
-        passed=result.passed,
     )
 
     return {"quality_score": result.score, "evaluation_feedback": result.feedback}

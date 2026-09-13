@@ -6,9 +6,9 @@ A laptop-shopping assistant built on **LangGraph** and **LangChain's `create_age
 
 Most "AI agent" demos are a single LLM call with tool access. This one is a hybrid: two points in the graph are genuine agents (the LLM decides which tools to call, how many times, and when to stop), while everything else is deterministic workflow code — on purpose, not by accident:
 
-- **Real tool-calling agents where it matters**: `research_agent` decides for itself whether to search the web, query the local knowledge base, both, or retry with a different query — it isn't told which source to use. `recommend` decides for itself whether to call a price-comparison tool or a spec-scoring tool before committing to an answer.
+- **Real tool-calling agents where it matters**: `research_agent` decides for itself whether to search the web, query the local knowledge base, both, or repeat with a different query — it isn't told which source to use. `recommend` decides for itself whether to call a price-comparison tool or a spec-scoring tool before committing to an answer.
 - **Everything else stays deterministic code**: intent classification, requirement extraction, quality scoring, and human-approval routing are plain structured-output LLM calls or pure Python — turning them into agents would only add cost and unpredictability without adding real decision-making.
-- **Self-correcting**: an evaluator scores every recommendation against explicit criteria; below threshold, a reflection step diagnoses what's missing and sends the research agent back with a targeted follow-up, bounded to a fixed number of attempts.
+- **Scored, not just produced**: an evaluator scores every recommendation against explicit criteria (budget fit, purpose fit, data support, internal consistency) and surfaces that score plus concrete feedback alongside the recommendation, instead of presenting it as unconditionally correct.
 - **Not unilateral**: every recommendation pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism — rejecting with feedback sends it back through recommendation and evaluation again, bounded by a safety-valve rejection cap.
 - **Resumable, not just conversational**: state is checkpointed per `thread_id`; approval happens over separate HTTP calls (`POST /query`, then `POST /resume/{thread_id}`), not a single request/response turn.
 - **Validated at every boundary**: guardrails reject bad input before it reaches the LLM, validate tool arguments before a call, and filter incomplete tool results before they can corrupt state.
@@ -25,10 +25,7 @@ flowchart TD
     AN --> RA["research_agent (AGENT: web_search, search_knowledge_base)"]
     RA --> REC["recommend (AGENT: compare_products, convert_currency, score_product_spec)"]
     REC --> EV["evaluator (LLM)"]
-    EV -->|score above threshold| HA[human_approval]
-    EV -->|below threshold, retries left| REFL["reflection (LLM)"]
-    EV -->|below threshold, retries exhausted| HA
-    REFL --> RA
+    EV --> HA[human_approval]
     HA -->|approved| END2([END])
     HA -->|rejected + feedback, under cap| REC
     HA -->|rejected, cap reached| END2
@@ -41,7 +38,7 @@ Both `research_agent` and `recommend` are built with `create_agent(...)` and run
 ## Highlights
 
 - **Real agent boundary, deliberately narrow**: only the two nodes that actually need to choose a tool are agents; everything else is plain LLM calls or pure Python, kept that way on purpose.
-- **Self-correcting quality loop**: an evaluator scores each recommendation; a conditional edge decides proceed/reflect/degrade based on the score and retry count.
+- **Explicit quality signal, not a black box**: an evaluator scores each recommendation against stated criteria and surfaces the score plus concrete feedback to the human approving it.
 - **Real human-in-the-loop**: built on LangGraph's `interrupt()` + checkpointing, not a fake "confirm" button — approval happens over separate HTTP calls, validated against actual graph state (404/409) before resuming.
 - **Guardrails at every boundary**: input, tool-argument, and tool-result validation are isolated modules, never inline logic.
 - **Bounded retry for structured output**: shared `invoke_structured()`/`invoke_agent()` helpers retry LLM calls that omit a required field or fail to produce structured output, instead of every node reimplementing its own retry logic.
@@ -75,7 +72,7 @@ backend/app/
 ├── guards/             Input / tool-argument / tool-result validation, isolated from node logic
 ├── rag/                Ingestion, embeddings, vector store, retrieval — independent of the graph
 ├── prompts/            One prompt file per LLM-backed node
-├── schemas/            Internal Pydantic contracts (requirements, product, research, recommendation, evaluation, reflection, intent)
+├── schemas/            Internal Pydantic contracts (requirements, product, research, recommendation, evaluation, intent)
 └── api/                FastAPI routers + HTTP-facing DTOs (separate from internal schemas/)
 
 frontend/src/

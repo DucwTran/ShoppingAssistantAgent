@@ -7,7 +7,6 @@ from langgraph.types import Command
 
 from app.core.config import settings
 from app.graph.graph import (
-    _route_after_evaluator,
     _route_after_human_approval,
     _route_after_intent,
     build_graph,
@@ -35,11 +34,10 @@ def test_build_graph_compiles():
     assert graph is not None
 
 
-def test_build_graph_includes_evaluation_and_reflection_nodes():
+def test_build_graph_includes_evaluation_nodes():
     graph = build_graph()
     node_names = set(graph.get_graph().nodes)
     assert "evaluator" in node_names
-    assert "reflection" in node_names
     assert "human_approval" in node_names
     assert "intent" in node_names
     assert "research_agent" in node_names
@@ -51,21 +49,6 @@ def test_route_after_intent_shopping_goes_to_metadata():
 
 def test_route_after_intent_general_ends():
     assert _route_after_intent({"intent": "general"}) == END
-
-
-def test_route_after_evaluator_proceeds_when_score_meets_threshold():
-    state = {"quality_score": settings.quality_threshold, "reflection_count": 0}
-    assert _route_after_evaluator(state) == "human_approval"
-
-
-def test_route_after_evaluator_reflects_when_below_threshold_and_attempts_remain():
-    state = {"quality_score": 0.1, "reflection_count": 0}
-    assert _route_after_evaluator(state) == "reflection"
-
-
-def test_route_after_evaluator_degrades_when_reflection_budget_exhausted():
-    state = {"quality_score": 0.1, "reflection_count": settings.max_reflections}
-    assert _route_after_evaluator(state) == "human_approval"
 
 
 def test_route_after_human_approval_approved_ends():
@@ -110,17 +93,15 @@ def test_graph_end_to_end_rag_only_technical_question():
 
 
 @pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_evaluates_and_bounds_reflection():
+def test_graph_end_to_end_evaluates_recommendation_quality():
     graph, config, paused = _run_to_approval(
         build_graph(), "laptop duoi 25 trieu cho lap trinh AI va gaming"
     )
     interrupt_payload = paused["__interrupt__"][0].value
     assert 0.0 <= interrupt_payload["quality_score"] <= 1.0
-    assert interrupt_payload["reflection_count"] <= settings.max_reflections
 
     result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
     assert 0.0 <= result["quality_score"] <= 1.0
-    assert result.get("reflection_count", 0) <= settings.max_reflections
 
 
 @pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)

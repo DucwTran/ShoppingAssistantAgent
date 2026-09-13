@@ -1,6 +1,6 @@
 # AI Shopping Assistant — Backend
 
-Backend LangGraph cho agent tư vấn mua laptop: trích xuất yêu cầu từ câu hỏi tự nhiên, để 1 agent thật (`research_agent`) tự quyết định tìm web và/hoặc tra kiến thức nền (RAG), rồi 1 agent thật khác (`recommend`) tự quyết định có cần so sánh giá/quy đổi tiền tệ/chấm điểm spec hay không trước khi chốt khuyến nghị — sau đó tự chấm điểm và tự sửa khuyến nghị của chính mình, rồi dừng lại chờ người dùng duyệt trước khi kết thúc. Câu hỏi ngoài chủ đề (chào hỏi, hỏi lung tung) được nhận diện và trả lời nhẹ nhàng thay vì bị từ chối cứng. Chạy qua CLI hoặc FastAPI JSON API.
+Backend LangGraph cho agent tư vấn mua laptop: trích xuất yêu cầu từ câu hỏi tự nhiên, để 1 agent thật (`research_agent`) tự quyết định tìm web và/hoặc tra kiến thức nền (RAG), rồi 1 agent thật khác (`recommend`) tự quyết định có cần so sánh giá/quy đổi tiền tệ/chấm điểm spec hay không trước khi chốt khuyến nghị — sau đó một bước chấm điểm chất lượng độc lập đánh giá khuyến nghị đó, rồi dừng lại chờ người dùng duyệt trước khi kết thúc. Câu hỏi ngoài chủ đề (chào hỏi, hỏi lung tung) được nhận diện và trả lời nhẹ nhàng thay vì bị từ chối cứng. Chạy qua CLI hoặc FastAPI JSON API.
 
 ## Setup
 
@@ -44,7 +44,7 @@ python -m app.cli "RTX 4060 có đủ cho AI development không?"
 
 Câu hỏi kỹ thuật thuần (không cần sản phẩm cụ thể) được `research_agent` tự quyết định tra RAG, trả lời dựa trên kiến thức trong `data/knowledge/` thay vì so sánh sản phẩm cụ thể.
 
-Sau khi có khuyến nghị, agent tự chấm điểm chất lượng (0-1). Nếu chưa đạt ngưỡng, agent tự tìm ra chỗ thiếu cụ thể và giao lại cho `research_agent` tìm/tra lại có mục tiêu, tối đa vài lần trước khi trả kết quả tốt nhất hiện có kèm cảnh báo rõ ràng — không bao giờ bịa dữ liệu để đạt điểm cao.
+Sau khi có khuyến nghị, một bước `evaluator` chấm điểm chất lượng (0-1) theo tiêu chí rõ ràng (đúng ngân sách, đúng mục đích, có dữ liệu hỗ trợ...) và đính kèm feedback cụ thể. Nếu chưa đạt ngưỡng, khuyến nghị vẫn được đưa ra kèm cảnh báo rõ ràng thay vì bị chặn lại — không bao giờ bịa dữ liệu để đạt điểm cao, và người duyệt luôn thấy điểm số thật trước khi quyết định.
 
 Trước khi kết thúc, CLI luôn dừng lại hỏi bạn duyệt (`Approve this recommendation? [y/n]`) — kể cả khi đã đạt ngưỡng chất lượng. Gõ `n` rồi nhập góp ý sẽ khiến agent tạo lại khuyến nghị theo đúng góp ý đó và hỏi duyệt lại, lặp tới khi bạn approve (có giới hạn số lần từ chối làm van an toàn).
 

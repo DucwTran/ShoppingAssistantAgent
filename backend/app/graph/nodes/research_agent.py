@@ -21,7 +21,7 @@ _research_agent = create_agent(
     system_prompt=RESEARCH_AGENT_SYSTEM_PROMPT,
     middleware=[
         PIIMiddleware("email", strategy="redact"),
-        ToolCallLimitMiddleware(run_limit=4, exit_behavior="end"),
+        ToolCallLimitMiddleware(run_limit=8, exit_behavior="end"),
     ],
 )
 
@@ -49,9 +49,6 @@ def _build_instruction(state: ShoppingState) -> str:
             "constraints": state.get("constraints", []),
         },
     }
-    if state.get("reflection_count", 0) > 0 and state.get("search_query"):
-        payload["previous_gap"] = state.get("reflection_reason")
-        payload["refined_focus"] = state["search_query"]
     return json.dumps(payload, ensure_ascii=False)
 
 

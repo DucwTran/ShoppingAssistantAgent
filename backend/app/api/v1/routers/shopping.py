@@ -5,6 +5,7 @@ from langgraph.types import Command
 
 from app.api.dependencies import get_graph
 from app.api.v1.schemas.shopping import QueryRequest, ResumeRequest, ShoppingResponse, ShoppingResultData
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -12,14 +13,14 @@ router = APIRouter()
 def _response_from_invoke_result(thread_id: str, result: dict) -> ShoppingResponse:
     if "__interrupt__" in result:
         payload = result["__interrupt__"][0].value
-        data = ShoppingResultData(**payload)
+        data = ShoppingResultData(quality_threshold=settings.quality_threshold, **payload)
         return ShoppingResponse(thread_id=thread_id, status="pending_approval", data=data)
 
     data = ShoppingResultData(
         recommendation=result.get("recommendation"),
         quality_score=result.get("quality_score"),
+        quality_threshold=settings.quality_threshold,
         evaluation_feedback=result.get("evaluation_feedback"),
-        reflection_count=result.get("reflection_count", 0),
         general_reply=result.get("general_reply"),
     )
     return ShoppingResponse(thread_id=thread_id, status="done", data=data)

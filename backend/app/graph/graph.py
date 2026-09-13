@@ -10,34 +10,8 @@ from app.graph.nodes.input_validation import input_validation_node
 from app.graph.nodes.intent import intent_node
 from app.graph.nodes.metadata import metadata_node
 from app.graph.nodes.recommend import recommend_node
-from app.graph.nodes.reflection import reflection_node
 from app.graph.nodes.research_agent import research_agent_node
 from app.graph.state import ShoppingState
-
-
-def _route_after_evaluator(state: ShoppingState) -> str:
-    quality_score = state.get("quality_score", 0.0)
-    reflection_count = state.get("reflection_count", 0)
-
-    if quality_score >= settings.quality_threshold:
-        branch = "proceed"
-        next_node = "human_approval"
-    elif reflection_count >= settings.max_reflections:
-        branch = "degrade"
-        next_node = "human_approval"
-    else:
-        branch = "reflect"
-        next_node = "reflection"
-
-    emit(
-        "evaluator_routed",
-        f"Evaluator routing decision: {branch}",
-        node="evaluator",
-        branch=branch,
-        quality_score=quality_score,
-        reflection_count=reflection_count,
-    )
-    return next_node
 
 
 def _route_after_human_approval(state: ShoppingState) -> str:
@@ -61,7 +35,6 @@ def build_graph():
     graph.add_node("research_agent", research_agent_node)
     graph.add_node("recommend", recommend_node)
     graph.add_node("evaluator", evaluator_node)
-    graph.add_node("reflection", reflection_node)
     graph.add_node("human_approval", human_approval_node)
 
     graph.add_edge(START, "input_validation")
@@ -71,8 +44,7 @@ def build_graph():
     graph.add_edge("analyzer", "research_agent")
     graph.add_edge("research_agent", "recommend")
     graph.add_edge("recommend", "evaluator")
-    graph.add_conditional_edges("evaluator", _route_after_evaluator, ["reflection", "human_approval"])
-    graph.add_edge("reflection", "research_agent")
+    graph.add_edge("evaluator", "human_approval")
     graph.add_conditional_edges("human_approval", _route_after_human_approval, ["recommend", END])
 
     return graph.compile(checkpointer=get_checkpointer())

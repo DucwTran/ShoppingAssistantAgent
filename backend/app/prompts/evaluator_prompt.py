@@ -11,7 +11,7 @@ Score the recommendation from 0 to 1 based on:
 - Are there contradictions between why_it_fits, tradeoffs, and the underlying data?
 - If multiple products were available, is the choice meaningfully justified against them?
 
-Set passed to true only when the recommendation is solid on all of the above. In feedback, name the single
-most important concrete gap (e.g. "missing battery life info for the top candidate"), or state briefly why
-it passed if there is no gap. Never invent a gap that isn't actually present in the data.
+In feedback, name the single most important concrete gap (e.g. "missing battery life info for the top
+candidate"), or state briefly why it is solid if there is no gap. Never invent a gap that isn't actually
+present in the data.
 """

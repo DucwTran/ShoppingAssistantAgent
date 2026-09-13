@@ -9,7 +9,6 @@ def _build_approval_payload(state: ShoppingState) -> dict:
         "recommendation": state.get("recommendation"),
         "quality_score": state.get("quality_score"),
         "evaluation_feedback": state.get("evaluation_feedback"),
-        "reflection_count": state.get("reflection_count", 0),
     }
 
 

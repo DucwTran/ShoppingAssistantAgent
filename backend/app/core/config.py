@@ -18,8 +18,6 @@ class Settings(BaseSettings):
     nvidia_model: str = "openai/gpt-oss-20b"
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
 
-    # Reflection loop bounds
-    max_reflections: int = 2
     quality_threshold: float = 0.70
 
     # Human-in-the-loop rejection loop bound (safety valve, not a normal stopping point)

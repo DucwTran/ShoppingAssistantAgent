@@ -12,20 +12,13 @@ def test_build_approval_payload_passes_through_fields():
             "recommendation": {"product_name": "Laptop X"},
             "quality_score": 0.8,
             "evaluation_feedback": "Solid match.",
-            "reflection_count": 1,
         }
     )
     assert payload == {
         "recommendation": {"product_name": "Laptop X"},
         "quality_score": 0.8,
         "evaluation_feedback": "Solid match.",
-        "reflection_count": 1,
     }
-
-
-def test_build_approval_payload_defaults_reflection_count():
-    payload = _build_approval_payload({"recommendation": None, "quality_score": None})
-    assert payload["reflection_count"] == 0
 
 
 def _build_approval_only_graph():

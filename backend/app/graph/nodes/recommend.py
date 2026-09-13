@@ -19,7 +19,7 @@ _recommend_agent = create_agent(
     system_prompt=RECOMMEND_SYSTEM_PROMPT,
     middleware=[
         PIIMiddleware("email", strategy="redact"),
-        ToolCallLimitMiddleware(run_limit=4, exit_behavior="end"),
+        ToolCallLimitMiddleware(run_limit=8, exit_behavior="end"),
     ],
 )
 
