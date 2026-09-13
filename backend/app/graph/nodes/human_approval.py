@@ -29,6 +29,7 @@ def human_approval_node(state: ShoppingState) -> dict:
     resumed = interrupt(payload)
     approved = bool(resumed.get("approved"))
     feedback = resumed.get("feedback")
+    rejection_count = state.get("human_rejection_count", 0) if approved else state.get("human_rejection_count", 0) + 1
 
     emit(
         "hitl_resolved",
@@ -36,6 +37,7 @@ def human_approval_node(state: ShoppingState) -> dict:
         node="human_approval",
         approved=approved,
         feedback=feedback,
+        rejection_count=rejection_count,
     )
 
-    return {"human_approval": approved, "human_feedback": feedback}
+    return {"human_approval": approved, "human_feedback": feedback, "human_rejection_count": rejection_count}

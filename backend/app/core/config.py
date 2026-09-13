@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     openai_api_key: str = ""
 
-    # Chat completion / structured output model — active provider is chosen in core/llm.py
+    # Chat completion / structured output model — active provider is chosen via llm_provider
+    llm_provider: str = "groq"
     groq_model: str = "openai/gpt-oss-120b"
     openai_model: str = "gpt-5.4-mini"
     # Google is used only for embeddings — Groq has no embedding API
@@ -18,6 +19,9 @@ class Settings(BaseSettings):
     # Reflection loop bounds
     max_reflections: int = 2
     quality_threshold: float = 0.70
+
+    # Human-in-the-loop rejection loop bound (safety valve, not a normal stopping point)
+    max_human_rejections: int = 10
 
     # RAG chunking and embedding model
     chunk_size: int = 1000

@@ -54,7 +54,11 @@ def _route_after_evaluator(state: ShoppingState) -> str:
 
 
 def _route_after_human_approval(state: ShoppingState) -> str:
-    return END if state.get("human_approval") else "recommend"
+    if state.get("human_approval"):
+        return END
+    if state.get("human_rejection_count", 0) >= settings.max_human_rejections:
+        return END
+    return "recommend"
 
 
 def _route_after_intent(state: ShoppingState) -> str:

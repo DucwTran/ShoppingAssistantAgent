@@ -1,4 +1,4 @@
-from typing import Any, TypedDict
+from typing import TypedDict
 
 
 class ShoppingState(TypedDict, total=False):
@@ -40,10 +40,8 @@ class ShoppingState(TypedDict, total=False):
     # Human-in-the-loop
     human_approval: bool | None
     human_feedback: str | None
+    human_rejection_count: int
 
     # Final result
     recommendation: dict
     general_reply: str | None
-
-    # Session
-    log: list[dict[str, Any]]

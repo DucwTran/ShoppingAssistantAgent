@@ -11,7 +11,7 @@ import { UserMessage } from "./components/UserMessage"
 
 function App() {
   const conversation = useShoppingConversation()
-  const { messages, phase, busyAction } = conversation
+  const { messages, phase } = conversation
 
   return (
     <div className="mx-auto flex h-svh max-w-2xl flex-col">
@@ -34,7 +34,7 @@ function App() {
           <TurnView key={turn.id} turn={turn} isLatest={index === messages.length - 1} phase={phase} conversation={conversation} />
         ))}
 
-        {phase === "loading" && busyAction && <LoadingIndicator action={busyAction} />}
+        {phase === "loading" && <LoadingIndicator />}
       </ChatWindow>
 
       <footer className="border-t border-gray-200 p-4 dark:border-gray-700">
@@ -72,7 +72,6 @@ function TurnView({ turn, isLatest, phase, conversation }: TurnViewProps) {
             status={conversation.lastError.status}
             code={conversation.lastError.code}
             message={conversation.lastError.message}
-            onRetry={conversation.lastError.retryable ? conversation.retry : undefined}
             onDismiss={conversation.dismissError}
           />
         )
