@@ -10,16 +10,13 @@ from app.graph.graph import (
     _route_after_evaluator,
     _route_after_human_approval,
     _route_after_intent,
-    _route_by_source_flags,
     build_graph,
 )
 from app.graph.nodes.input_validation import input_validation_node
 from app.guards.input_guard import InvalidQueryError
 
-REQUIRES_LIVE_KEYS = (
-    not settings.google_api_key or not settings.tavily_api_key or not settings.groq_api_key
-)
-SKIP_REASON = "Requires real GOOGLE_API_KEY, TAVILY_API_KEY and GROQ_API_KEY in .env"
+REQUIRES_LIVE_KEYS = not settings.tavily_api_key
+SKIP_REASON = "Requires real TAVILY_API_KEY in .env (chat/embeddings run locally via Ollama)"
 
 
 def _thread_config():
@@ -45,7 +42,7 @@ def test_build_graph_includes_evaluation_and_reflection_nodes():
     assert "reflection" in node_names
     assert "human_approval" in node_names
     assert "intent" in node_names
-    assert "comparison" in node_names
+    assert "research_agent" in node_names
 
 
 def test_route_after_intent_shopping_goes_to_metadata():
@@ -54,23 +51,6 @@ def test_route_after_intent_shopping_goes_to_metadata():
 
 def test_route_after_intent_general_ends():
     assert _route_after_intent({"intent": "general"}) == END
-
-
-def test_route_by_source_flags_web_only():
-    assert _route_by_source_flags({"use_web": True, "use_rag": False}) == ["web_search"]
-
-
-def test_route_by_source_flags_rag_only():
-    assert _route_by_source_flags({"use_web": False, "use_rag": True}) == ["rag"]
-
-
-def test_route_by_source_flags_both():
-    branches = _route_by_source_flags({"use_web": True, "use_rag": True})
-    assert set(branches) == {"web_search", "rag"}
-
-
-def test_route_by_source_flags_defaults_to_web_search():
-    assert _route_by_source_flags({}) == ["web_search"]
 
 
 def test_route_after_evaluator_proceeds_when_score_meets_threshold():

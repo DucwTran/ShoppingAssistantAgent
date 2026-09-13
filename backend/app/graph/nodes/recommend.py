@@ -1,10 +1,27 @@
 import json
 
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMiddleware, ToolCallLimitMiddleware
+
 from app.core.events import emit
-from app.core.structured import invoke_structured
+from app.core.llm import get_llm
+from app.core.structured import invoke_agent
 from app.graph.state import ShoppingState
 from app.prompts.recommend_prompt import RECOMMEND_SYSTEM_PROMPT
 from app.schemas.recommendation import Recommendation
+from app.tools.agent_tools import RECOMMEND_TOOLS
+
+# No response_format here — the tool-calling loop runs free-form, then invoke_agent()
+# extracts Recommendation from the resulting conversation as a separate step (see its docstring).
+_recommend_agent = create_agent(
+    model=get_llm(),
+    tools=RECOMMEND_TOOLS,
+    system_prompt=RECOMMEND_SYSTEM_PROMPT,
+    middleware=[
+        PIIMiddleware("email", strategy="redact"),
+        ToolCallLimitMiddleware(run_limit=4, exit_behavior="end"),
+    ],
+)
 
 
 def recommend_node(state: ShoppingState) -> dict:
@@ -17,17 +34,12 @@ def recommend_node(state: ShoppingState) -> dict:
             "constraints": state.get("constraints", []),
         },
         "products": state.get("products", []),
-        "comparison": state.get("comparison", {}),
         "knowledge": state.get("retrieved_docs", []),
         "human_feedback": state.get("human_feedback"),
     }
 
-    recommendation = invoke_structured(
-        Recommendation,
-        [
-            ("system", RECOMMEND_SYSTEM_PROMPT),
-            ("human", json.dumps(payload, ensure_ascii=False)),
-        ],
+    recommendation: Recommendation = invoke_agent(
+        _recommend_agent, [("human", json.dumps(payload, ensure_ascii=False))], Recommendation
     )
 
     emit(

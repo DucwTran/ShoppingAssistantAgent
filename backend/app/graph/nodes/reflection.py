@@ -43,7 +43,5 @@ def reflection_node(state: ShoppingState) -> dict:
     return {
         "reflection_count": reflection_count,
         "reflection_reason": decision.reflection_reason,
-        "use_web": decision.use_web,
-        "use_rag": decision.use_rag,
         "search_query": decision.refined_query,
     }

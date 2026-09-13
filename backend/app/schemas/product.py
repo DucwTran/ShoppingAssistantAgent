@@ -1,8 +1,4 @@
-from typing import Annotated
-
-from pydantic import BaseModel, BeforeValidator, Field
-
-from app.schemas._common import none_to_list
+from pydantic import BaseModel, Field
 
 
 class Product(BaseModel):
@@ -15,7 +11,3 @@ class Product(BaseModel):
     storage: str = "unknown"
     url: str = "unknown"
     source_name: str = "unknown"
-
-
-class ProductList(BaseModel):
-    products: Annotated[list[Product] | None, BeforeValidator(none_to_list)] = Field(default_factory=list)

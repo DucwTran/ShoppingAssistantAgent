@@ -1,15 +1,17 @@
 # AI Shopping Assistant Agent
 
-An agentic laptop-shopping assistant built on **LangGraph**: it extracts requirements from a natural-language request, searches the web and/or a local knowledge base, self-evaluates and refines its own recommendation, then pauses for human approval before finalizing — served via a FastAPI backend with a React chat frontend.
+A laptop-shopping assistant built on **LangGraph** and **LangChain's `create_agent`**: it extracts requirements from a natural-language request, has a real tool-calling agent research the web and/or a local knowledge base, has a second agent produce a recommendation (optionally comparing prices/converting currency itself), self-evaluates and refines that recommendation, then pauses for human approval before finalizing — served via a FastAPI backend with a React chat frontend.
 
 ## Why this project
 
-Most "AI agent" demos are a single LLM call with tool access. This one behaves closer to a real product:
+Most "AI agent" demos are a single LLM call with tool access. This one is a hybrid: two points in the graph are genuine agents (the LLM decides which tools to call, how many times, and when to stop), while everything else is deterministic workflow code — on purpose, not by accident:
 
-- **Self-correcting**: an evaluator scores every recommendation against explicit criteria; below threshold, a reflection node diagnoses what's missing and triggers a targeted re-search, bounded to a fixed number of attempts.
-- **Not unilateral**: every recommendation pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism — rejecting with feedback sends it back through recommendation and evaluation again.
+- **Real tool-calling agents where it matters**: `research_agent` decides for itself whether to search the web, query the local knowledge base, both, or retry with a different query — it isn't told which source to use. `recommend` decides for itself whether to call a price-comparison tool or a spec-scoring tool before committing to an answer.
+- **Everything else stays deterministic code**: intent classification, requirement extraction, quality scoring, and human-approval routing are plain structured-output LLM calls or pure Python — turning them into agents would only add cost and unpredictability without adding real decision-making.
+- **Self-correcting**: an evaluator scores every recommendation against explicit criteria; below threshold, a reflection step diagnoses what's missing and sends the research agent back with a targeted follow-up, bounded to a fixed number of attempts.
+- **Not unilateral**: every recommendation pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism — rejecting with feedback sends it back through recommendation and evaluation again, bounded by a safety-valve rejection cap.
 - **Resumable, not just conversational**: state is checkpointed per `thread_id`; approval happens over separate HTTP calls (`POST /query`, then `POST /resume/{thread_id}`), not a single request/response turn.
-- **Validated at every boundary**: guardrails reject bad input before it reaches the LLM, validate tool arguments before a paid API call, and filter incomplete tool results before they can corrupt state.
+- **Validated at every boundary**: guardrails reject bad input before it reaches the LLM, validate tool arguments before a call, and filter incomplete tool results before they can corrupt state.
 
 ## Architecture
 
@@ -20,49 +22,46 @@ flowchart TD
     INT -->|general chat| END1([END])
     INT -->|shopping intent| MD[metadata]
     MD --> AN["analyzer (LLM)"]
-    AN --> RT["router (LLM)"]
-    RT -->|use_web| WS[web_search]
-    RT -->|use_rag| RAG[rag]
-    WS --> NORM[normalize]
-    RAG --> NORM
-    NORM --> CMP[comparison]
-    CMP --> REC["recommend (LLM)"]
+    AN --> RA["research_agent (AGENT: web_search, search_knowledge_base)"]
+    RA --> REC["recommend (AGENT: compare_products, convert_currency, score_product_spec)"]
     REC --> EV["evaluator (LLM)"]
     EV -->|score above threshold| HA[human_approval]
     EV -->|below threshold, retries left| REFL["reflection (LLM)"]
     EV -->|below threshold, retries exhausted| HA
-    REFL -->|use_web| WS
-    REFL -->|use_rag| RAG
+    REFL --> RA
     HA -->|approved| END2([END])
-    HA -->|rejected + feedback| REC
+    HA -->|rejected + feedback, under cap| REC
+    HA -->|rejected, cap reached| END2
 ```
 
-`human_approval` is an `interrupt()` — the graph literally suspends execution and persists state via a LangGraph checkpointer until a `Command(resume=...)` is delivered, potentially in a completely separate process/request. The `intent` node runs first and short-circuits straight to `END` for non-shopping messages, so a "hi" gets a normal reply instead of a hard rejection or a full pipeline run. `comparison` is a plain Python step (no LLM call) that runs a registered tool to identify the cheapest/most expensive candidate whenever there are 2+ products, giving `recommend` a grounded fact instead of an eyeballed guess.
+`human_approval` is an `interrupt()` — the graph literally suspends execution and persists state via a LangGraph checkpointer until a `Command(resume=...)` is delivered, potentially in a completely separate process/request. The `intent` node runs first and short-circuits straight to `END` for non-shopping messages, so a "hi" gets a normal reply instead of a hard rejection or a full pipeline run.
+
+Both `research_agent` and `recommend` are built with `create_agent(...)` and run their own internal tool-calling loop, but neither uses `create_agent`'s built-in `response_format` — a smaller/local model won't reliably call a forced "final answer" tool, so the agent is left free to answer in plain text and a separate `with_structured_output(..., method="json_mode")` call extracts the final structured result from that answer. See `reference/mapping.md` for the full story (that file isn't tracked in git — it's a personal build log, not project documentation).
 
 ## Highlights
 
-- **Self-correcting quality loop**: an evaluator scores each recommendation; a separate conditional edge decides proceed/reflect/degrade based on the score and retry count.
+- **Real agent boundary, deliberately narrow**: only the two nodes that actually need to choose a tool are agents; everything else is plain LLM calls or pure Python, kept that way on purpose.
+- **Self-correcting quality loop**: an evaluator scores each recommendation; a conditional edge decides proceed/reflect/degrade based on the score and retry count.
 - **Real human-in-the-loop**: built on LangGraph's `interrupt()` + checkpointing, not a fake "confirm" button — approval happens over separate HTTP calls, validated against actual graph state (404/409) before resuming.
 - **Guardrails at every boundary**: input, tool-argument, and tool-result validation are isolated modules, never inline logic.
-- **Bounded retry for structured output**: a shared `invoke_structured()` helper retries LLM calls that omit a required field, instead of every node reimplementing its own retry logic.
-- **One synchronization point for fan-out**: LangGraph only joins branches that complete in the same superstep — fixed an early bug where uneven hop-counts silently double-invoked downstream nodes.
+- **Bounded retry for structured output**: shared `invoke_structured()`/`invoke_agent()` helpers retry LLM calls that omit a required field or fail to produce structured output, instead of every node reimplementing its own retry logic.
 - **Consistent error contract**: a dedicated exception handler reshapes every error path — validation, HTTP, unexpected 500s — into the same `{"error": {"code", "message"}}` shape.
-- **Swappable LLM provider**: a single `get_llm()` factory lets every node switch between Groq and OpenAI with a one-function change.
+- **Swappable LLM provider**: a single `get_llm()` factory switches between NVIDIA NIM, Ollama (fully local), Groq, and OpenAI with one setting — no code changes.
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
-| Agent orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) 1.2.11 + [LangChain](https://github.com/langchain-ai/langchain) 1.4.0 |
-| LLM (chat / structured output) | Groq (`openai/gpt-oss-120b`) or OpenAI (`gpt-5.4-mini`), swappable via `core/llm.py` |
-| Embeddings | Google Gemini (`gemini-embedding-001`) via `langchain-google-genai` |
+| Agent orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) 1.2.11 + [LangChain](https://github.com/langchain-ai/langchain) 1.4.0 (`create_agent`) |
+| LLM (chat / structured output) | **NVIDIA NIM** (`openai/gpt-oss-20b`, default) — or Ollama (fully local, no key), Groq, OpenAI, swappable via `core/llm.py` |
+| Embeddings | Ollama (`nomic-embed-text`, local, no key) |
 | Vector store (RAG) | Qdrant, embedded/local mode |
 | Web search tool | Tavily |
 | Validation / schemas | Pydantic v2, `pydantic-settings` |
 | Backend API | FastAPI + Uvicorn (synchronous JSON, no streaming) |
 | Frontend | React 19 + TypeScript + Vite, Tailwind CSS |
 | Language detection | py3langid |
-| Testing | pytest (73 tests: schemas, guards, RAG, graph routing, HITL/checkpoint, API) |
+| Testing | pytest (unit tests run with no API key at all except `TAVILY_API_KEY` for a few full-flow cases) |
 
 ## Project structure
 
@@ -70,19 +69,18 @@ flowchart TD
 backend/app/
 ├── cli.py            CLI entrypoint: python -m app.cli "<question>"
 ├── main.py            FastAPI app factory (lifespan-managed graph singleton, CORS, exception handlers)
-├── core/               Shared infrastructure: config, LLM factory, structured-output retry, logging/events, checkpointer
-├── graph/              ShoppingState schema, build_graph(), and one file per node (incl. intent classification)
-├── tools/              External tool registry (web search, product comparison, currency conversion) — validated, single point of truth
+├── core/               Shared infrastructure: config, LLM factory, structured-output/agent-invoke retry, logging/events, checkpointer
+├── graph/              ShoppingState schema, build_graph(), and one file per node
+├── tools/              External tool registry (web search, RAG search, compare, currency, spec score) + LangChain-native adapters for the 2 agents
 ├── guards/             Input / tool-argument / tool-result validation, isolated from node logic
 ├── rag/                Ingestion, embeddings, vector store, retrieval — independent of the graph
 ├── prompts/            One prompt file per LLM-backed node
-├── schemas/            Internal Pydantic contracts (requirements, product, recommendation, evaluation, reflection, intent)
-├── api/                FastAPI routers + HTTP-facing DTOs (separate from internal schemas/)
-└── evals/              Offline golden-query evaluation script, separate from the runtime evaluator node
+├── schemas/            Internal Pydantic contracts (requirements, product, research, recommendation, evaluation, reflection, intent)
+└── api/                FastAPI routers + HTTP-facing DTOs (separate from internal schemas/)
 
 frontend/src/
 ├── App.tsx             Chat UI shell, turn rendering
-├── hooks/               useShoppingConversation — conversation state machine
+├── hooks/               useShoppingConversation — conversation state machine (in-memory, no persistence)
 ├── api/                  Typed HTTP client for the backend
 ├── components/           Chat bubbles, recommendation card, approval controls, error banner
 └── types/                DTOs mirrored from the backend, field-for-field
@@ -104,12 +102,19 @@ Fill in `.env`:
 
 | Key | Used for |
 |---|---|
-| `GOOGLE_API_KEY` | RAG embeddings |
-| `TAVILY_API_KEY` | Web search |
-| `GROQ_API_KEY` | Chat / structured output |
-| `OPENAI_API_KEY` | Chat / structured output (alternate provider) |
+| `TAVILY_API_KEY` | Web search — the only external dependency with no local alternative |
+| `NVIDIA_API_KEY` | Chat LLM (default provider) — get one at [build.nvidia.com](https://build.nvidia.com) |
+| `GROQ_API_KEY` / `OPENAI_API_KEY` | Only needed if you switch `LLM_PROVIDER` to `groq`/`openai` |
 
-Build the RAG index (drop `.pdf`/`.md` files into `data/knowledge/` first):
+No key is needed for `LLM_PROVIDER=ollama` (fully local) or for embeddings (always local via Ollama).
+
+Pull the local embedding model (always required, regardless of chat provider):
+
+```bash
+ollama pull nomic-embed-text
+```
+
+Build the RAG index (drop `.pdf`/`.md` files into `data/knowledge/` first, or after changing the embedding model):
 
 ```bash
 python -m app.rag.vectorstore
@@ -149,7 +154,7 @@ Run tests:
 pytest -v
 ```
 
-Deterministic tests (schemas, guards, HITL/checkpoint mechanics, routing logic, 400/404 API cases) run without any API key. Tests exercising live LLM/search calls skip automatically if the corresponding key is missing, and are subject to each provider's quota.
+Deterministic tests (schemas, guards, HITL/checkpoint mechanics, routing logic, 400/404 API cases) run with no API key at all. A handful of full-flow tests need `TAVILY_API_KEY` and skip automatically if it's missing.
 
 ### Frontend
 
@@ -160,4 +165,4 @@ cp .env.example .env.development   # VITE_API_BASE_URL, defaults to http://127.0
 npm run dev
 ```
 
-Open the printed local URL with the backend running — the chat UI talks to it exclusively through `/api/v1/shopping/*`.
+Open the printed local URL with the backend running — the chat UI talks to it exclusively through `/api/v1/shopping/*`. There's no streaming and no client-side persistence by design — refreshing the page starts a new conversation.

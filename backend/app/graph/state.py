@@ -17,17 +17,13 @@ class ShoppingState(TypedDict, total=False):
 
     # Query analysis / routing
     intent: str  # "shopping" or "general", set by intent_node
-    use_web: bool
-    use_rag: bool
 
     # Retrieval
-    search_query: str
-    search_results: list
+    search_query: str  # refined research focus set by reflection_node for the next research_agent call
     retrieved_docs: list
 
     # Product processing
     products: list
-    comparison: dict  # cheapest/most_expensive summary set by comparison_node when there are >=2 products
 
     # Evaluation
     quality_score: float

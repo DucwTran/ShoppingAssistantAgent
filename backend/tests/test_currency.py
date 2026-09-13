@@ -1,6 +1,6 @@
 import pytest
 
-from app.graph.nodes.normalize import _to_vnd
+from app.graph.nodes.research_agent import _to_vnd
 from app.tools.currency import UnsupportedCurrencyError
 from app.tools.registry import TOOLS_BY_NAME
 

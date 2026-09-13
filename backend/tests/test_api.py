@@ -6,10 +6,8 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.main import app
 
-REQUIRES_LIVE_KEYS = (
-    not settings.google_api_key or not settings.tavily_api_key or not settings.groq_api_key
-)
-SKIP_REASON = "Requires real GOOGLE_API_KEY, TAVILY_API_KEY and GROQ_API_KEY in .env"
+REQUIRES_LIVE_KEYS = not settings.tavily_api_key
+SKIP_REASON = "Requires real TAVILY_API_KEY in .env (chat/embeddings run locally via Ollama)"
 
 
 def test_query_rejects_empty_query():

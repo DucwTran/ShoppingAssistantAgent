@@ -1,6 +1,6 @@
 # AI Shopping Assistant — Backend
 
-Backend LangGraph cho agent tư vấn mua laptop: trích xuất yêu cầu từ câu hỏi tự nhiên, tự quyết định tìm web và/hoặc tra kiến thức nền (RAG), tự chấm điểm và tự sửa khuyến nghị của chính mình, rồi dừng lại chờ người dùng duyệt trước khi kết thúc. Câu hỏi ngoài chủ đề (chào hỏi, hỏi lung tung) được nhận diện và trả lời nhẹ nhàng thay vì bị từ chối cứng. Chạy qua CLI hoặc FastAPI JSON API.
+Backend LangGraph cho agent tư vấn mua laptop: trích xuất yêu cầu từ câu hỏi tự nhiên, để 1 agent thật (`research_agent`) tự quyết định tìm web và/hoặc tra kiến thức nền (RAG), rồi 1 agent thật khác (`recommend`) tự quyết định có cần so sánh giá/quy đổi tiền tệ/chấm điểm spec hay không trước khi chốt khuyến nghị — sau đó tự chấm điểm và tự sửa khuyến nghị của chính mình, rồi dừng lại chờ người dùng duyệt trước khi kết thúc. Câu hỏi ngoài chủ đề (chào hỏi, hỏi lung tung) được nhận diện và trả lời nhẹ nhàng thay vì bị từ chối cứng. Chạy qua CLI hoặc FastAPI JSON API.
 
 ## Setup
 
@@ -13,20 +13,27 @@ cp .env.example .env
 ```
 
 Điền vào `.env`:
-- `GOOGLE_API_KEY` — lấy tại Google AI Studio (https://aistudio.google.com/apikey), dùng cho embeddings (RAG)
-- `TAVILY_API_KEY` — lấy tại https://tavily.com (free tier), dùng cho web search
-- `GROQ_API_KEY` — lấy tại https://console.groq.com/keys, dùng cho LLM chat/structured output
-- `OPENAI_API_KEY` — tuỳ chọn, provider thay thế cho Groq (xem `app/core/llm.py`)
+- `TAVILY_API_KEY` — lấy tại https://tavily.com (free tier), dùng cho web search — external duy nhất không có cách thay bằng local
+- `NVIDIA_API_KEY` — lấy tại https://build.nvidia.com, dùng cho LLM chat (provider mặc định)
+- `GROQ_API_KEY` / `OPENAI_API_KEY` — tuỳ chọn, chỉ cần khi đổi `LLM_PROVIDER` sang `groq`/`openai` (xem `app/core/llm.py`)
+
+Không cần key nào nếu đổi `LLM_PROVIDER=ollama` (chạy local hoàn toàn, chậm hơn nhưng không giới hạn số lần gọi) hoặc cho embeddings (luôn chạy local qua Ollama, không phụ thuộc provider chat).
 
 ## RAG — build knowledge index
 
-Đặt tài liệu (`.pdf` hoặc `.md`) vào `data/knowledge/`, sau đó build lại index (chạy lại mỗi khi thêm/sửa tài liệu):
+Cài model embedding local (chỉ cần 1 lần):
+
+```bash
+ollama pull nomic-embed-text
+```
+
+Đặt tài liệu (`.pdf` hoặc `.md`) vào `data/knowledge/`, sau đó build lại index (chạy lại mỗi khi thêm/sửa tài liệu, hoặc khi đổi embedding model):
 
 ```bash
 python -m app.rag.vectorstore
 ```
 
-Lệnh này đọc toàn bộ `.pdf`/`.md` trong `data/knowledge/`, chunk, embed (Gemini `gemini-embedding-001`), và lưu vào Qdrant local mode tại `data/qdrant_local/`.
+Lệnh này đọc toàn bộ `.pdf`/`.md` trong `data/knowledge/`, chunk, embed (Ollama `nomic-embed-text`), và lưu vào Qdrant local mode tại `data/qdrant_local/`.
 
 ## Chạy thử (CLI)
 
@@ -35,11 +42,11 @@ python -m app.cli "laptop dưới 25 triệu cho lập trình AI và gaming"
 python -m app.cli "RTX 4060 có đủ cho AI development không?"
 ```
 
-Câu hỏi kỹ thuật thuần (không cần sản phẩm cụ thể) được định tuyến qua RAG, trả lời dựa trên kiến thức trong `data/knowledge/` thay vì so sánh sản phẩm cụ thể.
+Câu hỏi kỹ thuật thuần (không cần sản phẩm cụ thể) được `research_agent` tự quyết định tra RAG, trả lời dựa trên kiến thức trong `data/knowledge/` thay vì so sánh sản phẩm cụ thể.
 
-Sau khi có khuyến nghị, agent tự chấm điểm chất lượng (0-1). Nếu chưa đạt ngưỡng, agent tự tìm ra chỗ thiếu cụ thể và search/retrieve lại có mục tiêu, tối đa vài lần trước khi trả kết quả tốt nhất hiện có kèm cảnh báo rõ ràng — không bao giờ bịa dữ liệu để đạt điểm cao.
+Sau khi có khuyến nghị, agent tự chấm điểm chất lượng (0-1). Nếu chưa đạt ngưỡng, agent tự tìm ra chỗ thiếu cụ thể và giao lại cho `research_agent` tìm/tra lại có mục tiêu, tối đa vài lần trước khi trả kết quả tốt nhất hiện có kèm cảnh báo rõ ràng — không bao giờ bịa dữ liệu để đạt điểm cao.
 
-Trước khi kết thúc, CLI luôn dừng lại hỏi bạn duyệt (`Approve this recommendation? [y/n]`) — kể cả khi đã đạt ngưỡng chất lượng. Gõ `n` rồi nhập góp ý sẽ khiến agent tạo lại khuyến nghị theo đúng góp ý đó và hỏi duyệt lại, lặp tới khi bạn approve.
+Trước khi kết thúc, CLI luôn dừng lại hỏi bạn duyệt (`Approve this recommendation? [y/n]`) — kể cả khi đã đạt ngưỡng chất lượng. Gõ `n` rồi nhập góp ý sẽ khiến agent tạo lại khuyến nghị theo đúng góp ý đó và hỏi duyệt lại, lặp tới khi bạn approve (có giới hạn số lần từ chối làm van an toàn).
 
 ## Chạy thử (API)
 
@@ -61,19 +68,10 @@ curl -X POST http://127.0.0.1:8000/api/v1/shopping/resume/<thread_id> \
 
 `approved: false` kèm `feedback` tạo lại khuyến nghị rồi trả `status: "pending_approval"` lần nữa — lặp `POST /resume` tới khi `status == "done"`. Lỗi trả `{"error": {"code", "message"}}`: 400 (query không hợp lệ), 404 (`thread_id` không tồn tại), 409 (thread đã xong).
 
-## Eval offline (golden queries)
-
-```bash
-python -m app.evals.run_eval
-```
-
-Chạy graph qua một bộ câu hỏi mẫu cố định, in `quality_score`/`reflection_count`/sản phẩm mỗi câu để quan sát chất lượng theo thời gian — không phải test tự động, không gate pass/fail.
-
 ## Test
 
 ```bash
 pytest -v
 ```
 
-Test cần gọi LLM/web search thật sẽ tự skip nếu `.env` chưa đủ key; chạy đầy đủ khi đã điền key (miễn còn quota).
-
+Phần lớn test (schema, guard, routing, HITL/checkpoint, tool thuần Python) chạy được mà không cần key nào. Vài test full-flow cần `TAVILY_API_KEY` thật, tự động skip nếu thiếu.

@@ -49,16 +49,14 @@ def test_evaluation_result_rejects_negative_score():
 def test_reflection_decision_accepts_valid_input():
     decision = ReflectionDecision(
         reflection_reason="Missing battery life info",
-        use_web=True,
-        use_rag=False,
         refined_query="battery life comparison for top candidates",
     )
-    assert decision.use_web is True
+    assert decision.refined_query == "battery life comparison for top candidates"
 
 
 def test_reflection_decision_rejects_empty_refined_query():
     with pytest.raises(ValidationError):
-        ReflectionDecision(reflection_reason="x", use_web=True, use_rag=False, refined_query="")
+        ReflectionDecision(reflection_reason="x", refined_query="")
 
 
 def test_intent_decision_shopping_has_no_reply():

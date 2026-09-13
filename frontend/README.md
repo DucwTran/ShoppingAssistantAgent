@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# AI Shopping Assistant — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Chat UI đơn giản cho backend LangGraph (xem `../README.md` cho kiến trúc đầy đủ). React 19 + TypeScript + Vite + Tailwind, request/response thuần qua `/api/v1/shopping/*` — không streaming, không lưu hội thoại (refresh trang = chat mới).
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+cp .env.example .env.development   # VITE_API_BASE_URL, mặc định http://127.0.0.1:8000
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Cần backend đang chạy (`uvicorn app.main:app --reload` ở `../backend`).
+
+## Cấu trúc
+
+```
+src/
+├── App.tsx               Khung chat, render từng loại turn (user/assistant/pending-approval/error)
+├── hooks/useShoppingConversation.ts   State machine của cuộc hội thoại (in-memory, không persist)
+├── api/shoppingClient.ts  HTTP client gọi backend
+├── components/            Bubble chat, recommendation card, nút approve/reject, error banner
+└── types/shopping.ts      DTO khớp field-for-field với backend
+```
+
+## Script
+
+```bash
+npm run dev       # dev server
+npm run build     # type-check (tsc) + build production
+npm run lint      # oxlint
+npm run preview   # xem thử bản build
+```
