@@ -1,9 +1,9 @@
 import pytest
+from pydantic import ValidationError
 
 from app.guards.input_guard import InvalidQueryError, validate_input
-from app.guards.tool_argument_guard import ToolArgumentError, call_tool
 from app.guards.tool_result_guard import filter_valid_results
-from app.tools.registry import TOOLS_BY_NAME
+from app.tools.agent_tools import web_search
 
 
 def test_input_guard_rejects_empty():
@@ -19,10 +19,10 @@ def test_input_guard_accepts_relevant_query():
     assert validate_input("  laptop gaming duoi 20 trieu  ") == "laptop gaming duoi 20 trieu"
 
 
-def test_tool_argument_guard_rejects_invalid_args():
-    tool = TOOLS_BY_NAME["web_search"]
-    with pytest.raises(ToolArgumentError):
-        call_tool(tool, query="laptop", max_results=-1)
+def test_agent_tool_rejects_invalid_args():
+    # args_schema is validated before the tool body runs, so no search is made
+    with pytest.raises(ValidationError):
+        web_search.invoke({"query": "laptop", "max_results": -1})
 
 
 def test_tool_result_guard_filters_incomplete_results():
@@ -32,6 +32,4 @@ def test_tool_result_guard_filters_incomplete_results():
         {"url": "http://c.com"},
         "not-a-dict",
     ]
-    valid, discarded = filter_valid_results(raw)
-    assert len(valid) == 1
-    assert discarded == 3
+    assert filter_valid_results(raw) == [raw[0]]

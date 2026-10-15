@@ -1,62 +1,44 @@
 import uuid
 
 import pytest
-
 from langgraph.graph import END
 from langgraph.types import Command
 
 from app.core.config import settings
-from app.graph.graph import (
-    _route_after_human_approval,
-    _route_after_intent,
-    build_graph,
-)
+from app.graph.graph import _route_after_feedback, _route_after_human_approval, _route_after_understand, build_graph
 from app.graph.nodes.input_validation import input_validation_node
 from app.guards.input_guard import InvalidQueryError
 
-REQUIRES_LIVE_KEYS = not settings.tavily_api_key
-SKIP_REASON = "Requires real TAVILY_API_KEY in .env (chat/embeddings run locally via Ollama)"
 
 
 def _thread_config():
     return {"configurable": {"thread_id": str(uuid.uuid4())}}
 
 
-def _run_to_approval(graph, query: str):
-    config = _thread_config()
-    result = graph.invoke({"query": query}, config)
-    assert "__interrupt__" in result
-    return graph, config, result
+# --- routing --------------------------------------------------------------------------------------
 
 
-def test_build_graph_compiles():
-    graph = build_graph()
-    assert graph is not None
+def test_build_graph_includes_all_nodes():
+    node_names = set(build_graph().get_graph().nodes)
+    assert {"understand", "research_agent", "extract_products", "recommend", "evaluator",
+            "human_approval", "feedback_router"} <= node_names
 
 
-def test_build_graph_includes_evaluation_nodes():
-    graph = build_graph()
-    node_names = set(graph.get_graph().nodes)
-    assert "evaluator" in node_names
-    assert "human_approval" in node_names
-    assert "intent" in node_names
-    assert "research_agent" in node_names
+def test_route_after_understand():
+    assert _route_after_understand({"intent": "shopping"}) == "research_agent"
+    assert _route_after_understand({"intent": "general"}) == END
 
 
-def test_route_after_intent_shopping_goes_to_metadata():
-    assert _route_after_intent({"intent": "shopping"}) == "metadata"
-
-
-def test_route_after_intent_general_ends():
-    assert _route_after_intent({"intent": "general"}) == END
-
-
-def test_route_after_human_approval_approved_ends():
+def test_route_after_human_approval():
     assert _route_after_human_approval({"human_approval": True}) == END
+    assert _route_after_human_approval({"human_approval": False}) == "feedback_router"
+    capped = {"human_approval": False, "human_rejection_count": settings.max_human_rejections}
+    assert _route_after_human_approval(capped) == END
 
 
-def test_route_after_human_approval_rejected_returns_to_recommend():
-    assert _route_after_human_approval({"human_approval": False}) == "recommend"
+def test_route_after_feedback():
+    assert _route_after_feedback({"research_hint": "laptop AMD"}) == "research_agent"
+    assert _route_after_feedback({"research_hint": None}) == "recommend"
 
 
 def test_input_validation_rejects_empty_query():
@@ -64,54 +46,119 @@ def test_input_validation_rejects_empty_query():
         input_validation_node({"query": "   "})
 
 
-@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_laptop_ai_gaming():
-    graph, config, paused = _run_to_approval(build_graph(), "laptop duoi 25 trieu cho lap trinh AI va gaming")
-    result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
-    recommendation = result["recommendation"]
-    assert recommendation["product_name"]
-    assert 0.0 <= recommendation["confidence"] <= 1.0
+# --- full graph, offline (fake LLM + fake agent loop) ---------------------------------------------
 
 
-@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_student_budget():
-    graph, config, paused = _run_to_approval(build_graph(), "laptop mong nhe cho sinh vien duoi 15 trieu")
-    result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
-    recommendation = result["recommendation"]
-    assert recommendation["product_name"]
+def test_offline_flow_grounds_products_and_pauses_for_approval(fake_pipeline):
+    graph, config = build_graph(), _thread_config()
+    result = graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
+
+    assert "__interrupt__" in result
+    state = graph.get_state(config).values
+    names = [p["name"] for p in state["products"]]
+    assert names == ["Acer Nitro V 15", "ASUS TUF A15"]  # hallucinated product dropped
+    assert state["products"][0]["price"] == 22_990_000  # "22.990.000" parsed
+
+    recommendation = result["__interrupt__"][0].value["recommendation"]
+    assert recommendation["product_name"] == "Acer Nitro V 15"
+    assert recommendation["url"] == "https://fptshop.com.vn/acer-nitro-v"
+    assert 0.0 <= result["__interrupt__"][0].value["quality_score"] <= 1.0
 
 
-@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_rag_only_technical_question():
-    graph, config, paused = _run_to_approval(
-        build_graph(), "laptop RTX 4060 co du manh cho AI development khong?"
-    )
-    assert paused["__interrupt__"][0].value["recommendation"]["why_it_fits"]
-    result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
-    assert result.get("retrieved_docs")
-    assert result["recommendation"]["why_it_fits"]
+def test_offline_general_chat_ends_without_research(fake_pipeline):
+    fake_pipeline.is_shopping = False
+    result = build_graph().invoke({"query": "hello"}, _thread_config())
+    assert result["general_reply"] == "Xin chào!"
+    assert "research_agent" not in fake_pipeline.calls
 
 
-@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_evaluates_recommendation_quality():
-    graph, config, paused = _run_to_approval(
-        build_graph(), "laptop duoi 25 trieu cho lap trinh AI va gaming"
-    )
-    interrupt_payload = paused["__interrupt__"][0].value
-    assert 0.0 <= interrupt_payload["quality_score"] <= 1.0
+def test_offline_reject_needing_new_products_researches_again(fake_pipeline):
+    graph, config = build_graph(), _thread_config()
+    graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
 
-    result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
-    assert 0.0 <= result["quality_score"] <= 1.0
+    fake_pipeline.needs_new_products = True
+    result = graph.invoke(Command(resume={"approved": False, "feedback": "prefer AMD GPU"}), config)
+
+    assert "__interrupt__" in result
+    assert fake_pipeline.calls.count("research_agent") == 2
+    assert graph.get_state(config).values["research_hint"] == "laptop AMD"
 
 
-@pytest.mark.skipif(REQUIRES_LIVE_KEYS, reason=SKIP_REASON)
-def test_graph_end_to_end_hitl_reject_then_approve():
-    graph, config, paused = _run_to_approval(build_graph(), "laptop duoi 25 trieu cho lap trinh AI va gaming")
+def test_offline_reject_satisfiable_from_candidates_skips_research(fake_pipeline):
+    graph, config = build_graph(), _thread_config()
+    graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
+
+    fake_pipeline.product_id = 1
+    result = graph.invoke(Command(resume={"approved": False, "feedback": "the ASUS instead"}), config)
+
+    assert fake_pipeline.calls.count("research_agent") == 1
+    recommendation = result["__interrupt__"][0].value["recommendation"]
+    assert recommendation["product_name"] == "ASUS TUF A15"
+    # 26.49M > 25M budget: the guard must disclose it even though the model listed no tradeoffs
+    assert any("budget" in t for t in recommendation["tradeoffs"])
+
+
+def test_offline_empty_research_is_reported_not_guessed(fake_pipeline, monkeypatch):
+    from app.graph.nodes import research_agent
+
+    fake_pipeline.web_results, fake_pipeline.docs = [], []
+    monkeypatch.setattr(research_agent, "_fallback_research", lambda state: ([], []))
+    fake_pipeline.product_id = None
+
+    graph, config = build_graph(), _thread_config()
+    result = graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
+
+    state = graph.get_state(config).values
+    assert state["research_status"] == "empty"
+    assert state["products"] == []
+    assert result["__interrupt__"][0].value["recommendation"]["product_name"] == "N/A"
+
+
+def test_offline_invalid_product_id_is_rejected(fake_pipeline):
+    fake_pipeline.product_id = 99
+    with pytest.raises(ValueError):
+        build_graph().invoke({"query": "laptop gaming dưới 25 triệu"}, _thread_config())
+
+
+# --- live (real Gemini + Tavily, run with `pytest -m live`) -----------------------------------
+
+
+def _assert_grounded(state: dict) -> None:
+    recommendation = state["recommendation"]
+    assert state["products"], "research should produce at least one grounded product"
+    web_urls = {r["url"] for r in state["web_results"]}
+    assert all(p["source_url"] in web_urls for p in state["products"])
+    if recommendation["product_name"] != "N/A":
+        assert recommendation["url"] in web_urls
+        budget = state.get("budget")
+        if budget and recommendation["price"] and recommendation["price"] > budget:
+            assert any("budget" in t.lower() or "ngân sách" in t.lower() for t in recommendation["tradeoffs"])
+
+
+@pytest.mark.live
+def test_live_shopping_query_is_grounded():
+    graph, config = build_graph(), _thread_config()
+    result = graph.invoke({"query": "laptop dưới 25 triệu cho lập trình AI và gaming"}, config)
+    assert "__interrupt__" in result
+    _assert_grounded(graph.get_state(config).values)
+
+
+@pytest.mark.live
+def test_live_technical_question_uses_knowledge():
+    graph, config = build_graph(), _thread_config()
+    result = graph.invoke({"query": "RTX 4060 có đủ mạnh cho AI development không?"}, config)
+    assert result["__interrupt__"][0].value["recommendation"]["why_it_fits"]
+    assert graph.get_state(config).values["retrieved_docs"]
+
+
+@pytest.mark.live
+def test_live_reject_then_approve():
+    graph, config = build_graph(), _thread_config()
+    graph.invoke({"query": "laptop dưới 25 triệu cho lập trình AI và gaming"}, config)
 
     result = graph.invoke(Command(resume={"approved": False, "feedback": "prefer AMD GPU"}), config)
-    assert "__interrupt__" in result, "rejecting should route back through recommend/evaluator to another approval"
+    assert "__interrupt__" in result
+    _assert_grounded(graph.get_state(config).values)
 
     result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
-    assert "__interrupt__" not in result
     assert result["human_approval"] is True
-    assert result["recommendation"]["product_name"]

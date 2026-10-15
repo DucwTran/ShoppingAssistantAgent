@@ -1,3 +1,5 @@
+import unicodedata
+
 MAX_QUERY_LENGTH = 500
 
 
@@ -6,7 +8,10 @@ class InvalidQueryError(ValueError):
 
 
 def validate_input(raw_query: str) -> str:
-    query = (raw_query or "").strip()
+    # NFC so Vietnamese diacritics typed as combining marks compare/search like precomposed ones;
+    # control characters (other than whitespace) carry no meaning in a query and are dropped.
+    query = unicodedata.normalize("NFC", raw_query or "")
+    query = "".join(ch for ch in query if ch.isprintable() or ch.isspace()).strip()
 
     if not query:
         raise InvalidQueryError("Query must not be empty.")

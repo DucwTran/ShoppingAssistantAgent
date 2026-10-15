@@ -34,7 +34,7 @@ function App() {
           <TurnView key={turn.id} turn={turn} isLatest={index === messages.length - 1} phase={phase} conversation={conversation} />
         ))}
 
-        {phase === "loading" && <LoadingIndicator />}
+        {phase === "loading" && <LoadingIndicator progress={conversation.progress} />}
       </ChatWindow>
 
       <footer className="border-t border-gray-200 p-4 dark:border-gray-700">
@@ -69,9 +69,8 @@ function TurnView({ turn, isLatest, phase, conversation }: TurnViewProps) {
       if (isLatest && conversation.lastError) {
         return (
           <ErrorBanner
-            status={conversation.lastError.status}
-            code={conversation.lastError.code}
             message={conversation.lastError.message}
+            onRetry={conversation.lastError.retry ? conversation.retry : undefined}
             onDismiss={conversation.dismissError}
           />
         )
@@ -82,8 +81,8 @@ function TurnView({ turn, isLatest, phase, conversation }: TurnViewProps) {
       if (turn.data.general_reply) {
         return <AssistantMessage text={turn.data.general_reply} />
       }
-      if (turn.status === "done") {
-        return <FinalRecommendationMessage data={turn.data} />
+      if (turn.status !== "pending_approval") {
+        return <FinalRecommendationMessage data={turn.data} rejected={turn.status === "rejected"} />
       }
       if (isLatest && (phase === "pending_approval" || phase === "loading")) {
         return (

@@ -1,0 +1,8 @@
+[
+  {"query": "laptop dưới 25 triệu cho lập trình AI và gaming", "kind": "shopping"},
+  {"query": "laptop mỏng nhẹ cho sinh viên dưới 15 triệu", "kind": "shopping"},
+  {"query": "best gaming laptop under 1000 USD", "kind": "shopping"},
+  {"query": "RTX 4060 có đủ mạnh cho AI development không?", "kind": "knowledge"},
+  {"query": "lập trình cần bao nhiêu RAM là đủ?", "kind": "knowledge"},
+  {"query": "xin chào", "kind": "general"}
+]

@@ -1,6 +1,6 @@
-export function formatPrice(price: number | string): string {
-  if (typeof price === "string") return "Price unknown"
-  return `${new Intl.NumberFormat("en-US").format(price)} VND`
+export function formatPrice(price: number | null, currency: string | null): string {
+  if (price === null) return "Price unknown"
+  return `${new Intl.NumberFormat("vi-VN").format(price)} ${currency ?? "VND"}`
 }
 
 export function formatConfidence(confidence: number): string {

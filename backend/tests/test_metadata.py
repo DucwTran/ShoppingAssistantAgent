@@ -1,20 +1,14 @@
-from datetime import datetime
-
-from app.graph.nodes.metadata import metadata_node
+from app.graph.nodes.metadata import language_name, metadata_node
 
 
 def test_detects_vietnamese():
-    result = metadata_node({"query": "laptop dưới 25 triệu cho lập trình AI và gaming"})
-    assert result["language"] == "vi"
-    datetime.fromisoformat(result["detected_at"])
+    assert metadata_node({"query": "laptop dưới 25 triệu cho lập trình AI và gaming"})["language"] == "vi"
 
 
 def test_detects_english():
-    result = metadata_node({"query": "best laptop under 1000 dollars for gaming"})
-    assert result["language"] == "en"
+    assert metadata_node({"query": "best laptop under 1000 dollars for gaming"})["language"] == "en"
 
 
-def test_detected_at_is_utc_iso_format():
-    result = metadata_node({"query": "laptop gaming"})
-    parsed = datetime.fromisoformat(result["detected_at"])
-    assert parsed.tzinfo is not None
+def test_language_name_defaults_to_vietnamese():
+    assert language_name("en") == "English"
+    assert language_name(None) == "Vietnamese"

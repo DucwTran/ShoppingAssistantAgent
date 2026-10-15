@@ -5,7 +5,19 @@ import uuid
 from langgraph.types import Command
 
 from app.core.config import settings
+from app.core.errors import to_app_error
 from app.graph.graph import build_graph
+from app.guards.input_guard import InvalidQueryError
+
+
+def _invoke(graph, graph_input, config: dict) -> dict:
+    """Run the graph; a failure ends the CLI with the same message the API would show, not a traceback."""
+    try:
+        return graph.invoke(graph_input, config)
+    except InvalidQueryError as exc:
+        sys.exit(f"Invalid query: {exc}")
+    except Exception as exc:  # noqa: BLE001 - classified and logged by to_app_error
+        sys.exit(f"\n{to_app_error(exc, config['configurable']['thread_id']).message}")
 
 
 def _prompt_for_approval() -> Command:
@@ -30,7 +42,7 @@ def main() -> None:
     print(f"thread_id: {thread_id}")
 
     graph = build_graph()
-    result = graph.invoke({"query": query}, config)
+    result = _invoke(graph, {"query": query}, config)
 
     while "__interrupt__" in result:
         payload = result["__interrupt__"][0].value
@@ -38,8 +50,14 @@ def main() -> None:
         print(json.dumps(payload.get("recommendation", {}), ensure_ascii=False, indent=2))
         if payload.get("quality_score") is not None:
             print(f"Quality score: {payload['quality_score']:.2f} (threshold {settings.quality_threshold:.2f})")
-        result = graph.invoke(_prompt_for_approval(), config)
+        result = _invoke(graph, _prompt_for_approval(), config)
 
+    if result.get("general_reply"):
+        print(f"\n{result['general_reply']}")
+        return
+
+    if result.get("human_approval") is False:
+        print("\nRejection limit reached - the last recommendation below was NOT approved.")
     print("\nFinal recommendation:")
     print(json.dumps(result.get("recommendation", {}), ensure_ascii=False, indent=2))
 

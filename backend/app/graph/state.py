@@ -1,4 +1,6 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
+
+ResearchStatus = Literal["ok", "empty"]
 
 
 class ShoppingState(TypedDict, total=False):
@@ -7,22 +9,25 @@ class ShoppingState(TypedDict, total=False):
 
     # Request metadata
     language: str
-    detected_at: str
 
-    # Extracted requirements
+    # Query understanding / routing
+    intent: str  # "shopping" or "general", set by understand_node
+    general_reply: str | None
+
+    # Extracted requirements (budget always in VND)
     budget: float | None
     purpose: list[str]
     preferences: dict
     constraints: list[str]
 
-    # Query analysis / routing
-    intent: str  # "shopping" or "general", set by intent_node
+    # Research - raw tool results, collected from tool artifacts (never restated by the model)
+    research_hint: str | None  # set by feedback_router when a rejection needs a new search
+    web_results: list[dict]
+    retrieved_docs: list[dict]
+    research_status: ResearchStatus
 
-    # Retrieval
-    retrieved_docs: list
-
-    # Product processing
-    products: list
+    # Product processing - each product grounded to a web_results url
+    products: list[dict]
 
     # Evaluation
     quality_score: float
@@ -35,4 +40,12 @@ class ShoppingState(TypedDict, total=False):
 
     # Final result
     recommendation: dict
-    general_reply: str | None
+
+
+def requirements_of(state: ShoppingState) -> dict:
+    return {
+        "budget_vnd": state.get("budget"),
+        "purpose": state.get("purpose", []),
+        "preferences": state.get("preferences", {}),
+        "constraints": state.get("constraints", []),
+    }

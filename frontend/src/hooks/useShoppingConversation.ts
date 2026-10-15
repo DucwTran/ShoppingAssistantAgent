@@ -1,24 +1,25 @@
-import { useMemo, useState } from "react"
-import { ApiError, postQuery, postResume } from "../api/shoppingClient"
-import type { ConversationStatus, ShoppingResultData, ShoppingResponse } from "../types/shopping"
+import { useState } from "react"
+import { ApiError, streamQuery, streamResume, streamRetry } from "../api/shoppingClient"
+import type { ConversationStatus, ProgressEvent, ShoppingResultData, ShoppingResponse } from "../types/shopping"
 
 export type ChatTurn =
   | { kind: "user_query"; id: string; text: string }
   | { kind: "user_decision"; id: string; approved: boolean; feedback: string | null }
   | { kind: "agent_result"; id: string; threadId: string; status: ConversationStatus; data: ShoppingResultData }
-  | { kind: "error"; id: string; status: number; code: string; message: string }
+  | { kind: "error"; id: string; message: string }
 
 export type ConversationPhase = "idle" | "loading" | "pending_approval"
 
-interface ActiveThread {
-  threadId: string
-  data: ShoppingResultData
-}
+/** A request to the backend; the failed one is kept so the user can retry it. */
+type RetryableAction =
+  | { kind: "query"; text: string }
+  | { kind: "resume"; threadId: string; approved: boolean; feedback: string | null }
+  | { kind: "continue"; threadId: string }
 
 interface LastError {
-  status: number
-  code: string
   message: string
+  /** Set when retrying can succeed: network failures and server-side outages, not rejected input. */
+  retry: RetryableAction | null
 }
 
 function newId(): string {
@@ -27,14 +28,19 @@ function newId(): string {
 
 export function useShoppingConversation() {
   const [messages, setMessages] = useState<ChatTurn[]>([])
-  const [activeThread, setActiveThread] = useState<ActiveThread | null>(null)
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [progress, setProgress] = useState<ProgressEvent[]>([])
   const [lastError, setLastError] = useState<LastError | null>(null)
 
-  const phase: ConversationPhase = isLoading ? "loading" : activeThread ? "pending_approval" : "idle"
+  const phase: ConversationPhase = isLoading ? "loading" : activeThreadId ? "pending_approval" : "idle"
 
   function appendTurn(turn: ChatTurn) {
     setMessages((prev) => [...prev, turn])
+  }
+
+  function appendProgress(event: ProgressEvent) {
+    setProgress((prev) => [...prev, event])
   }
 
   function applyResponse(response: ShoppingResponse) {
@@ -45,41 +51,64 @@ export function useShoppingConversation() {
       status: response.status,
       data: response.data,
     })
-    setActiveThread(response.status === "pending_approval" ? { threadId: response.thread_id, data: response.data } : null)
+    setActiveThreadId(response.status === "pending_approval" ? response.thread_id : null)
   }
 
-  function applyFailure(error: unknown, invalidatesThread: boolean) {
+  function applyFailure(error: unknown, action: RetryableAction) {
     const apiError =
       error instanceof ApiError ? error : new ApiError(0, "unknown_error", "Something went wrong.")
+    const retryable = apiError.status === 0 || apiError.status >= 500
+    // A run that failed on the server is continued from its failed step; a request that never got an
+    // answer (network failure) is sent again as it was.
+    const retry: RetryableAction | null = !retryable
+      ? null
+      : apiError.threadId
+        ? { kind: "continue", threadId: apiError.threadId }
+        : action
 
-    appendTurn({ kind: "error", id: newId(), status: apiError.status, code: apiError.code, message: apiError.message })
+    appendTurn({ kind: "error", id: newId(), message: apiError.message })
+    // Back to idle whatever failed, so the user is never left without a way forward: they can retry
+    // from the error banner or ask something new.
+    setActiveThreadId(null)
+    setLastError({ message: apiError.message, retry })
+  }
 
-    if (invalidatesThread && (apiError.status === 404 || apiError.status === 409)) {
-      setActiveThread(null)
+  function request(action: RetryableAction): Promise<ShoppingResponse> {
+    switch (action.kind) {
+      case "query":
+        return streamQuery(action.text, appendProgress)
+      case "resume":
+        return streamResume(action.threadId, action.approved, action.feedback, appendProgress)
+      case "continue":
+        return streamRetry(action.threadId, appendProgress)
     }
-    setLastError({ status: apiError.status, code: apiError.code, message: apiError.message })
+  }
+
+  function send(action: RetryableAction) {
+    setIsLoading(true)
+    setProgress([])
+    setLastError(null)
+    request(action)
+      .then(applyResponse)
+      .catch((error: unknown) => applyFailure(error, action))
+      .finally(() => setIsLoading(false))
   }
 
   function submitQuery(text: string) {
     if (phase !== "idle") return
     appendTurn({ kind: "user_query", id: newId(), text })
-    setIsLoading(true)
-    setLastError(null)
-    postQuery(text)
-      .then(applyResponse)
-      .catch((error: unknown) => applyFailure(error, false))
-      .finally(() => setIsLoading(false))
+    send({ kind: "query", text })
   }
 
   function resume(approved: boolean, feedback: string | null) {
-    if (phase !== "pending_approval" || !activeThread) return
+    if (phase !== "pending_approval" || !activeThreadId) return
     appendTurn({ kind: "user_decision", id: newId(), approved, feedback })
-    setIsLoading(true)
-    setLastError(null)
-    postResume(activeThread.threadId, approved, feedback)
-      .then(applyResponse)
-      .catch((error: unknown) => applyFailure(error, true))
-      .finally(() => setIsLoading(false))
+    send({ kind: "resume", threadId: activeThreadId, approved, feedback })
+  }
+
+  function retry() {
+    if (phase !== "idle" || !lastError?.retry) return
+    send(lastError.retry)
   }
 
   function approve() {
@@ -97,12 +126,10 @@ export function useShoppingConversation() {
   function startNewConversation() {
     if (phase === "loading") return
     setMessages([])
-    setActiveThread(null)
+    setActiveThreadId(null)
+    setProgress([])
     setLastError(null)
   }
 
-  return useMemo(
-    () => ({ messages, phase, lastError, submitQuery, approve, reject, dismissError, startNewConversation }),
-    [messages, phase, lastError],
-  )
+  return { messages, phase, progress, lastError, submitQuery, approve, reject, retry, dismissError, startNewConversation }
 }

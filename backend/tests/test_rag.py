@@ -1,5 +1,14 @@
+import pytest
+
 from app.rag.embeddings import get_embeddings
 from app.rag.retriever import retrieve
+from app.rag.vectorstore import QDRANT_PATH
+
+# Embedding the query calls the Gemini API.
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(not QDRANT_PATH.exists(), reason="Requires a built index (python -m app.rag.vectorstore)"),
+]
 
 
 def test_embeddings_return_vector():

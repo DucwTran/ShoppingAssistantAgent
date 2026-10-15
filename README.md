@@ -1,165 +1,152 @@
-# AI Shopping Assistant Agent
+# AI Shopping Assistant Agent — Project Report
 
-A laptop-shopping assistant built on **LangGraph** and **LangChain's `create_agent`**: it extracts requirements from a natural-language request, has a real tool-calling agent research the web and/or a local knowledge base, has a second agent produce a recommendation (optionally comparing prices/converting currency itself), self-evaluates and refines that recommendation, then pauses for human approval before finalizing — served via a FastAPI backend with a React chat frontend.
+This project is a conversational assistant for buying laptops in the Vietnamese market, built with **LangChain** and **LangGraph**. A user states a need in plain language, for example *"a laptop under 25 million VND for AI programming and gaming"*. The system searches products currently listed by Vietnamese retailers, consults a hardware knowledge base, and recommends one product with its reasons, trade-offs and a quality score. It then pauses for the user's decision: the user either accepts the recommendation or describes what should change, and the system refines its answer accordingly.
 
-## Why this project
+---
 
-Most "AI agent" demos are a single LLM call with tool access. This one is a hybrid: two points in the graph are genuine agents (the LLM decides which tools to call, how many times, and when to stop), while everything else is deterministic workflow code — on purpose, not by accident:
+## 1. Problem and objectives
 
-- **Real tool-calling agents where it matters**: `research_agent` decides for itself whether to search the web, query the local knowledge base, both, or repeat with a different query — it isn't told which source to use. `recommend` decides for itself whether to call a price-comparison tool or a spec-scoring tool before committing to an answer.
-- **Everything else stays deterministic code**: intent classification, requirement extraction, quality scoring, and human-approval routing are plain structured-output LLM calls or pure Python — turning them into agents would only add cost and unpredictability without adding real decision-making.
-- **Scored, not just produced**: an evaluator scores every recommendation against explicit criteria (budget fit, purpose fit, data support, internal consistency) and surfaces that score plus concrete feedback alongside the recommendation, instead of presenting it as unconditionally correct.
-- **Not unilateral**: every recommendation pauses for human approval via LangGraph's `interrupt()`/checkpoint mechanism — rejecting with feedback sends it back through recommendation and evaluation again, bounded by a safety-valve rejection cap.
-- **Resumable, not just conversational**: state is checkpointed per `thread_id`; approval happens over separate HTTP calls (`POST /query`, then `POST /resume/{thread_id}`), not a single request/response turn.
-- **Validated at every boundary**: guardrails reject bad input before it reaches the LLM, validate tool arguments before a call, and filter incomplete tool results before they can corrupt state.
+Choosing a laptop requires three kinds of information at once: the buyer's **needs** (budget, intended use, constraints), current **market data** (which models are on sale and at what price), and **technical knowledge** (whether a given GPU is adequate for AI work, how much memory a workload needs). A single call to a language model cannot provide this reliably, because the model has no access to current prices and tends to invent specifications.
 
-## Architecture
+The project pursues two objectives:
+
+1. **Demonstrate the core techniques of LangChain and LangGraph** on a realistic problem: a tool-calling agent, a stateful graph with branches and cycles, human-in-the-loop control, retrieval-augmented generation (RAG), streaming, and offline testing of an LLM application.
+2. **Keep every answer grounded in retrieved data:** each recommended product must trace back to a real web page, and no price or specification may originate from the model itself.
+
+## 2. Scope
+
+| Supported | Not supported |
+|---|---|
+| Laptop recommendations for a stated budget, purpose and constraints, in Vietnamese or English | Product categories other than laptops |
+| Technical questions about laptop hardware (CPU, GPU, RAM, storage, battery), answered from the knowledge base | Multi-turn conversation memory: each new question starts a new conversation |
+| Refinement through feedback: after a rejection, the system either re-selects among the current candidates or searches for new ones | Price tracking, ordering, user accounts |
+| Small talk, answered briefly with a redirection to laptop topics | Currencies other than VND and USD (USD is converted at a fixed rate) |
+
+## 3. System architecture
+
+The system consists of a backend (FastAPI and LangGraph) and a chat frontend (React). The backend's processing is a LangGraph state graph of nine steps:
 
 ```mermaid
 flowchart TD
-    START([START]) --> IV[input_validation]
-    IV --> INT["intent (LLM)"]
-    INT -->|general chat| END1([END])
-    INT -->|shopping intent| MD[metadata]
-    MD --> AN["analyzer (LLM)"]
-    AN --> RA["research_agent (AGENT: web_search, search_knowledge_base)"]
-    RA --> REC["recommend (AGENT: compare_products, convert_currency, score_product_spec)"]
-    REC --> EV["evaluator (LLM)"]
-    EV --> HA[human_approval]
-    HA -->|approved| END2([END])
-    HA -->|rejected + feedback, under cap| REC
-    HA -->|rejected, cap reached| END2
+    START([Start]) --> IV[Input validation] --> MD[Language detection]
+    MD --> UN["Understand request (LLM)"]
+    UN -->|small talk| END1([Reply directly])
+    UN -->|shopping| RA["Research agent<br/>(chooses: web search / knowledge base)"]
+    RA --> EP["Extract products (LLM)<br/>+ source check"]
+    EP --> REC["Choose product (LLM)"]
+    REC --> EV["Quality scoring<br/>(code + LLM)"]
+    EV --> HA[Wait for user decision]
+    HA -->|accepted| END2([End])
+    HA -->|rejected with feedback| FR["Analyze feedback (LLM)"]
+    FR -->|needs other products| RA
+    FR -->|re-select from current list| REC
 ```
 
-`human_approval` is an `interrupt()` — the graph literally suspends execution and persists state via a LangGraph checkpointer until a `Command(resume=...)` is delivered, potentially in a completely separate process/request. The `intent` node runs first and short-circuits straight to `END` for non-shopping messages, so a "hi" gets a normal reply instead of a hard rejection or a full pipeline run.
-
-Both `research_agent` and `recommend` are built with `create_agent(...)` and run their own internal tool-calling loop, but neither uses `create_agent`'s built-in `response_format` — a smaller/local model won't reliably call a forced "final answer" tool, so the agent is left free to answer in plain text and a separate `with_structured_output(..., method="json_mode")` call extracts the final structured result from that answer. See `reference/mapping.md` for the full story (that file isn't tracked in git — it's a personal build log, not project documentation).
-
-## Highlights
-
-- **Real agent boundary, deliberately narrow**: only the two nodes that actually need to choose a tool are agents; everything else is plain LLM calls or pure Python, kept that way on purpose.
-- **Explicit quality signal, not a black box**: an evaluator scores each recommendation against stated criteria and surfaces the score plus concrete feedback to the human approving it.
-- **Real human-in-the-loop**: built on LangGraph's `interrupt()` + checkpointing, not a fake "confirm" button — approval happens over separate HTTP calls, validated against actual graph state (404/409) before resuming.
-- **Guardrails at every boundary**: input, tool-argument, and tool-result validation are isolated modules, never inline logic.
-- **Bounded retry for structured output**: shared `invoke_structured()`/`invoke_agent()` helpers retry LLM calls that omit a required field or fail to produce structured output, instead of every node reimplementing its own retry logic.
-- **Consistent error contract**: a dedicated exception handler reshapes every error path — validation, HTTP, unexpected 500s — into the same `{"error": {"code", "message"}}` shape.
-- **Swappable LLM provider**: a single `get_llm()` factory switches between NVIDIA NIM, Ollama (fully local), Groq, and OpenAI with one setting — no code changes.
-
-## Tech stack
-
-| Layer | Choice |
+| Step | Role |
 |---|---|
-| Agent orchestration | [LangGraph](https://github.com/langchain-ai/langgraph) 1.2.11 + [LangChain](https://github.com/langchain-ai/langchain) 1.4.0 (`create_agent`) |
-| LLM (chat / structured output) | **NVIDIA NIM** (`openai/gpt-oss-20b`, default) — or Ollama (fully local, no key), Groq, OpenAI, swappable via `core/llm.py` |
-| Embeddings | Ollama (`nomic-embed-text`, local, no key) |
-| Vector store (RAG) | Qdrant, embedded/local mode |
-| Web search tool | Tavily |
-| Validation / schemas | Pydantic v2, `pydantic-settings` |
-| Backend API | FastAPI + Uvicorn (synchronous JSON, no streaming) |
-| Frontend | React 19 + TypeScript + Vite, Tailwind CSS |
-| Language detection | py3langid |
-| Testing | pytest (unit tests run with no API key at all except `TAVILY_API_KEY` for a few full-flow cases) |
+| **Input validation** | Normalizes Unicode, removes control characters, and rejects empty or over-long input (more than 500 characters). |
+| **Language detection** | Identifies Vietnamese or English, so that every reply is written in the user's language. |
+| **Understand request** | A single LLM call classifies the message (shopping or small talk) and extracts budget, purpose, preferences and constraints. Small talk is answered immediately, without running the rest of the pipeline. |
+| **Research agent** | The only autonomous agent in the system. The model decides whether to search the web, query the knowledge base, or both, and whether a follow-up search is needed, within a limit of four tool calls. |
+| **Extract products** | Turns raw search results into a structured product list (name, price, CPU, GPU, RAM, storage, source URL), converted to VND. |
+| **Choose product** | The model selects a candidate by its identifier. Name, price and link are then copied by code from the source data. |
+| **Quality scoring** | Combines checks computed in code (real source, within budget, completeness of specifications) with an LLM judgement of how well the product serves the stated purpose. |
+| **Wait for user decision** | The graph pauses and the recommendation is shown to the user. |
+| **Analyze feedback** | Distinguishes feedback that needs *new products* ("cheaper", "AMD graphics") from feedback that can be met by *re-selecting* among the current candidates. |
 
-## Project structure
+**Data sources**
 
-```
-backend/app/
-├── cli.py            CLI entrypoint: python -m app.cli "<question>"
-├── main.py            FastAPI app factory (lifespan-managed graph singleton, CORS, exception handlers)
-├── core/               Shared infrastructure: config, LLM factory, structured-output/agent-invoke retry, logging/events, checkpointer
-├── graph/              ShoppingState schema, build_graph(), and one file per node
-├── tools/              External tool registry (web search, RAG search, compare, currency, spec score) + LangChain-native adapters for the 2 agents
-├── guards/             Input / tool-argument / tool-result validation, isolated from node logic
-├── rag/                Ingestion, embeddings, vector store, retrieval — independent of the graph
-├── prompts/            One prompt file per LLM-backed node
-├── schemas/            Internal Pydantic contracts (requirements, product, research, recommendation, evaluation, intent)
-└── api/                FastAPI routers + HTTP-facing DTOs (separate from internal schemas/)
+- **Web search:** Tavily, restricted first to six Vietnamese retailers (Thế Giới Di Động, FPT Shop, CellphoneS, GearVN, Phong Vũ, Hacom) and to pages updated within the last year, with the open web as a fallback. Lines that contain prices are extracted from the full page text, since search snippets rarely include them.
+- **Knowledge base (RAG):** three guides on CPUs, GPUs, and RAM, storage and battery, split into overlapping chunks, embedded with Gemini `gemini-embedding-001` and stored in a local Qdrant index. Additional PDF or Markdown documents placed in the knowledge folder are indexed as well.
 
-frontend/src/
-├── App.tsx             Chat UI shell, turn rendering
-├── hooks/               useShoppingConversation — conversation state machine (in-memory, no persistence)
-├── api/                  Typed HTTP client for the backend
-├── components/           Chat bubbles, recommendation card, approval controls, error banner
-└── types/                DTOs mirrored from the backend, field-for-field
-```
+## 4. Reliability and safety
 
-## Getting started
+**Grounding.** Search results reach the graph state directly from the tools' output (`ToolMessage.artifact`) and never pass through the model's prose. A product whose source URL is not among the retrieved pages is discarded. The facts extracted for each product are then checked against the text of its source page: a price that does not appear on the page is removed, and a specification is kept only if every number in it (the "4050" of "RTX 4050", the "16" of "16GB") appears there. A value the model filled in from its own knowledge is therefore discarded rather than shown. The final recommendation takes its name, price and link from the selected candidate, not from text written by the model.
 
-### Backend
+**Guardrails.**
+
+| Guard | What it enforces |
+|---|---|
+| Input guard | Clean, non-empty input of bounded length |
+| Tool arguments | Schema validation of every argument the agent passes to a tool |
+| Tool results | Search results without a title or URL are dropped, never completed with guessed values |
+| Untrusted content | Web content is delimited and marked as data, so that instructions embedded in a page are ignored |
+| Privacy | Email addresses are redacted from the agent's input |
+| Budget disclosure | A recommendation priced above the budget always states this, even when the model omits it |
+
+**Error handling.** Failures are handled at the level where they can be resolved:
+
+| Failure | Handling |
+|---|---|
+| Invalid or incomplete structured output | The call is repeated, up to two more times |
+| A Gemini API key reaches its quota or is rejected | The request moves to the next key in a pool of keys; exhausted keys are skipped by later requests |
+| Temporary provider failure (overload, 5xx, timeout) | The affected step is retried after about 3 and then 6 seconds |
+| Research agent failure | A deterministic search with fixed queries replaces the agent's results |
+| Failure that persists after these measures | The user receives a clear message (for example, that the AI service is busy) and a **Try again** action, which continues the conversation from the step that failed without repeating completed work. |
+
+**Human control.** No recommendation is final until the user accepts it. The number of consecutive rejections is capped at ten as a safety bound.
+
+**Data retention.** Every step of a conversation is saved as a checkpoint. Conversations idle for more than 24 hours, whether finished, awaiting a decision or stopped by an error, are deleted when the server starts and every hour thereafter, and the freed space is returned to the file system, so the database does not grow without bound.
+
+## 5. LangChain and LangGraph techniques
+
+| Technique | Application in this project |
+|---|---|
+| **StateGraph, conditional edges, cycles** | Branching on the type of message; a rejection loops back to research or to product selection |
+| **Tool-calling agent (`create_agent`)** | Research agent with two tools, a tool-call limit, PII redaction, and API key rotation implemented as middleware |
+| **Tool artifacts (`content_and_artifact`)** | The agent reads a short summary of each result, while the complete data goes directly into the graph state |
+| **Structured output (Pydantic)** | Every LLM step returns a validated schema; outputs that fail validation are regenerated |
+| **Human-in-the-loop** | `interrupt()` pauses the graph; `Command(resume=...)` continues it in a later HTTP request |
+| **Checkpointing** | Conversation state is stored in SQLite, so a paused conversation survives a server restart and a failed run can be continued from its last completed step |
+| **Streaming** | `get_stream_writer()` emits progress events for each step, delivered to the interface through Server-Sent Events |
+| **RetryPolicy** | Steps that call the LLM are retried automatically after temporary provider failures |
+| **RAG** | Relevant passages from the knowledge base support technical answers and the reasoning behind a recommendation |
+| **Offline testing** | The complete graph runs with a simulated LLM, without network access or API keys |
+
+## 6. Evaluation
+
+The system is verified at two levels:
+
+- **Automated tests** (pytest, 104 tests). 98 of them run by default, without network access or API keys: the complete graph with a simulated LLM, the HTTP and streaming API including error responses and retries, the guards (including fact verification against source pages), the schemas, the key rotation and the pruning of old conversations. Six live tests call the real Gemini and Tavily services and the knowledge index; they consume API quota and run only on request.
+- **Evaluation script** (`backend/evals/run_eval.py`). It runs a fixed set of six real queries (three shopping requests in Vietnamese and English, two technical questions, one greeting) against the live services and reports intent accuracy, the share of shopping queries for which products were found, grounding of every product to a retrieved URL, budget compliance, mean quality score, and median and 95th-percentile latency. Each run is saved under `backend/evals/results/`.
+
+## 7. Limitations
+
+- **Response time.** A full shopping request takes roughly half a minute to a minute, dominated by sequential LLM calls and web searches. Progress is streamed step by step, but the total wait remains noticeable.
+- **Dependence on search data.** Some specifications, such as battery life, rarely appear in retailer listings, so requests centred on them may end without a confident recommendation.
+- **Fixed exchange rate** between USD and VND.
+- **Demonstration scope.** The system runs as a single process without user authentication or rate limiting, in line with its purpose as a learning and demonstration project.
+
+## 8. Technology stack
+
+| Component | Technology |
+|---|---|
+| Agent orchestration | LangGraph, LangChain |
+| Language model | Google Gemini `gemini-3.5-flash`, through a pool of rotating API keys |
+| Embeddings and vector store | Gemini `gemini-embedding-001`, Qdrant (embedded, local) |
+| Web search | Tavily |
+| State persistence | SQLite (LangGraph checkpointer) |
+| Backend | FastAPI, Pydantic |
+| Frontend | React, TypeScript, Vite, Tailwind CSS |
+| Testing | pytest, evaluation script with real queries |
+
+---
+
+## Appendix: Running the project
+
+Requirements: Python 3.11, Node.js, a [Tavily](https://tavily.com) API key and one or more [Google AI Studio](https://aistudio.google.com/apikey) API keys.
 
 ```bash
+# Backend
 cd backend
-python -m venv .venv
-./.venv/Scripts/activate   # Windows; use source .venv/bin/activate on macOS/Linux
+python -m venv .venv && ./.venv/Scripts/activate
 pip install -r requirements.txt
-cp .env.example .env
-```
-
-Fill in `.env`:
-
-| Key | Used for |
-|---|---|
-| `TAVILY_API_KEY` | Web search — the only external dependency with no local alternative |
-| `NVIDIA_API_KEY` | Chat LLM (default provider) — get one at [build.nvidia.com](https://build.nvidia.com) |
-| `GROQ_API_KEY` / `OPENAI_API_KEY` | Only needed if you switch `LLM_PROVIDER` to `groq`/`openai` |
-
-No key is needed for `LLM_PROVIDER=ollama` (fully local) or for embeddings (always local via Ollama).
-
-Pull the local embedding model (always required, regardless of chat provider):
-
-```bash
-ollama pull nomic-embed-text
-```
-
-Build the RAG index (drop `.pdf`/`.md` files into `data/knowledge/` first, or after changing the embedding model):
-
-```bash
-python -m app.rag.vectorstore
-```
-
-Run via CLI:
-
-```bash
-python -m app.cli "laptop under 25 million VND for AI development and gaming"
-```
-
-The CLI pauses for approval (`Approve this recommendation? [y/n]`) before printing the final result — reject with feedback to have the agent regenerate.
-
-Run the API:
-
-```bash
+cp .env.example .env                  # set TAVILY_API_KEY and GEMMA_API_KEY_1, GEMMA_API_KEY_2, ...
+python -m app.rag.vectorstore         # build the knowledge index
 uvicorn app.main:app --reload
+
+# Frontend (separate terminal)
+cd frontend && npm install && npm run dev    # http://localhost:5173
 ```
 
-```bash
-curl -X POST http://127.0.0.1:8000/api/v1/shopping/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "laptop under 25 million VND for AI development and gaming"}'
-# -> { "thread_id": "...", "status": "pending_approval", "data": {...} }
-
-curl -X POST http://127.0.0.1:8000/api/v1/shopping/resume/<thread_id> \
-  -H "Content-Type: application/json" \
-  -d '{"approved": true, "feedback": null}'
-# -> { "thread_id": "...", "status": "done", "data": {...} }
-```
-
-`approved: false` with `feedback` regenerates the recommendation and returns `pending_approval` again — repeat until `status == "done"`. Errors follow `{"error": {"code", "message"}}`: 400 (invalid query), 404 (unknown `thread_id`), 409 (thread already finished).
-
-Run tests:
-
-```bash
-pytest -v
-```
-
-Deterministic tests (schemas, guards, HITL/checkpoint mechanics, routing logic, 400/404 API cases) run with no API key at all. A handful of full-flow tests need `TAVILY_API_KEY` and skip automatically if it's missing.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-cp .env.example .env.development   # VITE_API_BASE_URL, defaults to http://127.0.0.1:8000
-npm run dev
-```
-
-Open the printed local URL with the backend running — the chat UI talks to it exclusively through `/api/v1/shopping/*`. There's no streaming and no client-side persistence by design — refreshing the page starts a new conversation.
+Backend details are described in [backend/README.md](backend/README.md) and the interface in [frontend/README.md](frontend/README.md).

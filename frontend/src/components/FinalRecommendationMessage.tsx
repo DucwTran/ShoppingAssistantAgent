@@ -3,15 +3,20 @@ import { RecommendationCard } from "./RecommendationCard"
 
 interface FinalRecommendationMessageProps {
   data: ShoppingResultData
+  rejected: boolean
 }
 
-export function FinalRecommendationMessage({ data }: FinalRecommendationMessageProps) {
+export function FinalRecommendationMessage({ data, rejected }: FinalRecommendationMessageProps) {
   if (!data.recommendation) return null
 
   return (
     <div className="max-w-[80%] space-y-2">
-      <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">Final</span>
-      <RecommendationCard recommendation={data.recommendation} />
+      <span className="text-xs font-medium tracking-wide text-gray-400 uppercase">
+        {rejected ? "Rejection limit reached — not approved" : "Final"}
+      </span>
+      <div className={rejected ? "opacity-60" : undefined}>
+        <RecommendationCard recommendation={data.recommendation} />
+      </div>
       {data.quality_score !== null && (
         <p className="text-sm text-gray-500">Quality score: {Math.round(data.quality_score * 100)}%</p>
       )}

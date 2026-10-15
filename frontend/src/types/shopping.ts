@@ -1,8 +1,10 @@
-export type ConversationStatus = "pending_approval" | "done"
+export type ConversationStatus = "pending_approval" | "done" | "rejected"
 
 export interface Recommendation {
   product_name: string
-  price: number | string
+  price: number | null
+  currency: string | null
+  url: string | null
   why_it_fits: string[]
   tradeoffs: string[]
   alternative: string | null
@@ -39,4 +41,23 @@ export interface ErrorDetail {
 
 export interface ErrorEnvelope {
   error: ErrorDetail
+}
+
+/**
+ * The streaming endpoints' `error` frame: the envelope, the status the JSON endpoint would have returned,
+ * and the conversation to pass to the retry endpoint.
+ */
+export interface StreamErrorFrame extends ErrorEnvelope {
+  status: number
+  thread_id: string
+}
+
+/** One `progress` frame from the streaming endpoints; extra fields depend on the event. */
+export interface ProgressEvent {
+  event: string
+  node: string
+  status: "info" | "warning"
+  message: string
+  tool?: string
+  args?: { query?: string }
 }

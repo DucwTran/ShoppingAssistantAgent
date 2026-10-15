@@ -1,4 +1,5 @@
 import shutil
+from functools import lru_cache
 from pathlib import Path
 
 from langchain_qdrant import QdrantVectorStore
@@ -10,7 +11,9 @@ QDRANT_PATH = Path(__file__).resolve().parents[2] / "data" / "qdrant_local"
 COLLECTION_NAME = "laptop_knowledge"
 
 
+@lru_cache(maxsize=1)
 def get_vectorstore() -> QdrantVectorStore:
+    # Cached: Qdrant's embedded mode holds a file lock, so a second client in the same process would fail.
     return QdrantVectorStore.from_existing_collection(
         collection_name=COLLECTION_NAME,
         embedding=get_embeddings(),
@@ -30,13 +33,10 @@ def build_index() -> QdrantVectorStore:
         shutil.rmtree(QDRANT_PATH)
 
     chunks = load_and_chunk()
-    texts = [chunk.text for chunk in chunks]
-    metadatas = [{"source": chunk.source} for chunk in chunks]
-
     return QdrantVectorStore.from_texts(
-        texts=texts,
+        texts=[chunk.text for chunk in chunks],
         embedding=get_embeddings(),
-        metadatas=metadatas,
+        metadatas=[{"source": chunk.source} for chunk in chunks],
         collection_name=COLLECTION_NAME,
         path=str(QDRANT_PATH),
     )

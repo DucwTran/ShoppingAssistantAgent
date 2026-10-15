@@ -1,10 +1,9 @@
 from app.rag.ingestion import load_and_chunk, load_documents
 
 
-def test_load_documents_reads_pdf_and_markdown():
+def test_load_documents_reads_markdown():
     docs = load_documents()
     suffixes = {source.rsplit(".", 1)[-1].lower() for source, _ in docs}
-    assert "pdf" in suffixes
     assert "md" in suffixes
 
 

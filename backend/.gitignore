@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 data/qdrant_local/
 data/knowledge/*.pdf
+evals/results/
+data/checkpoints.sqlite*

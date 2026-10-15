@@ -1,7 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from app.core.checkpointer import get_checkpointer
+from langgraph.checkpoint.memory import InMemorySaver
 from app.graph.nodes.human_approval import _build_approval_payload, human_approval_node
 from app.graph.state import ShoppingState
 
@@ -26,7 +26,7 @@ def _build_approval_only_graph():
     graph.add_node("human_approval", human_approval_node)
     graph.add_edge(START, "human_approval")
     graph.add_edge("human_approval", END)
-    return graph.compile(checkpointer=get_checkpointer())
+    return graph.compile(checkpointer=InMemorySaver())
 
 
 def test_human_approval_interrupts_then_resolves_on_approve():
