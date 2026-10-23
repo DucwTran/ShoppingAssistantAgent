@@ -14,6 +14,7 @@ from app.schemas.product import Product
 from app.schemas.recommendation import RecommendationChoice
 from app.schemas.research import ProductExtraction
 from app.schemas.understanding import QueryUnderstanding
+from app.tools import price_lookup
 
 WEB_RESULTS = [
     {"title": "Laptop Acer Nitro V 15 RTX 4050", "url": "https://fptshop.com.vn/acer-nitro-v",
@@ -47,9 +48,16 @@ class FakePipeline:
     failures: dict[str, Exception] = field(default_factory=dict)
     # schema name -> JSON payload of the latest request for it
     payloads: dict[str, dict] = field(default_factory=dict)
+    # schema name -> thinking level of the latest request for it
+    thinking_levels: dict[str, str | None] = field(default_factory=dict)
+    # Results returned by the second search for missing prices
+    price_lookup_results: list[dict] = field(default_factory=list)
+    # Overrides what extraction returns; None uses _extracted_products()
+    extracted: list[Product] | None = None
 
-    def structured(self, schema, messages, check=None, max_retries=2):
+    def structured(self, schema, messages, check=None, max_retries=2, thinking_level=None):
         self.calls.append(schema.__name__)
+        self.thinking_levels[schema.__name__] = thinking_level
         human = messages[-1][1]
         if human.startswith("{"):
             self.payloads[schema.__name__] = json.loads(human)
@@ -63,7 +71,7 @@ class FakePipeline:
                 purpose=["gaming"] if self.is_shopping else [],
             )
         elif schema is ProductExtraction:
-            result = ProductExtraction(products=_extracted_products())
+            result = ProductExtraction(products=self.extracted if self.extracted is not None else _extracted_products())
         elif schema is RecommendationChoice:
             result = RecommendationChoice(
                 product_id=self.product_id, alternative_id=None, why_it_fits=["fits"], tradeoffs=[], confidence=0.8
@@ -106,4 +114,5 @@ def fake_pipeline(monkeypatch) -> FakePipeline:
     for module in (understand, extract_products, recommend, evaluator, feedback_router):
         monkeypatch.setattr(module, "invoke_structured", fake.structured)
     monkeypatch.setattr(research_agent, "_run_agent", fake.run_agent)
+    monkeypatch.setattr(price_lookup, "search_web", lambda query, max_results: fake.price_lookup_results)
     return fake

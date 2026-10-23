@@ -63,6 +63,7 @@ Errors use `{"error": {"code": str, "message": str}}`:
 
 - **LLM access** (`app/core/llm.py`): every Gemini call, including those inside the agent loop (via middleware) and embeddings, goes through `with_key_rotation`. Quota (429) and auth errors move to the next key; other errors propagate.
 - **Retries**: structured output that fails validation is regenerated up to twice (`app/core/structured.py`); LLM nodes retry provider failures after ~3 s and ~6 s (`RetryPolicy`).
+- **Measurement** (`app/core/metrics.py`): each LLM node is wrapped by `measured`, which emits a `node_measured` event (`duration_ms`, `input_tokens`, `output_tokens`, `failed`) per attempt; it is logged and also sent on the stream.
 - **Checkpoints** (`app/core/checkpointer.py`): SQLite at `data/checkpoints.sqlite`; pruned at startup and hourly, followed by `VACUUM`.
 - **Knowledge index**: `.md`/`.pdf` files in `data/knowledge/`, 1,000-character chunks with 150 overlap, stored in `data/qdrant_local/`. Embedded Qdrant allows one process at a time, so stop the server before running RAG tests or evals.
 
@@ -71,7 +72,10 @@ Errors use `{"error": {"code": str, "message": str}}`:
 ```bash
 pytest                    # offline suite (default; live tests excluded in pytest.ini)
 pytest -m live            # real services; skipped if keys are missing
-python -m evals.run_eval  # writes results to evals/results/
+python -m evals.run_eval     # labeled query set; writes results to evals/results/
+python -m evals.check_judge  # LLM judge vs. hand-labeled recommendations
 ```
+
+See [../docs/eval.md](../docs/eval.md) for the dataset and metrics.
 
 `tests/conftest.py` replaces every LLM call and the agent loop with a scripted `FakePipeline`, so the offline suite runs the real graph without network access.

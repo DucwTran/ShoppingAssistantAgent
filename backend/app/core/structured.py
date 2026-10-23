@@ -3,13 +3,14 @@ from typing import Callable, TypeVar
 from langchain_core.exceptions import OutputParserException
 from pydantic import BaseModel, ValidationError
 
-from app.core.llm import chat_model, with_key_rotation
+from app.core.llm import ThinkingLevel, chat_model, with_key_rotation
 
 T = TypeVar("T", bound=BaseModel)
 
 
-def _generate(schema: type[T], messages: list[tuple[str, str]]) -> T | None:
-    return with_key_rotation(lambda key: chat_model(key).with_structured_output(schema).invoke(messages))
+def _generate(schema: type[T], messages: list[tuple[str, str]], thinking_level: ThinkingLevel | None) -> T | None:
+    return with_key_rotation(
+        lambda key: chat_model(key, thinking_level).with_structured_output(schema).invoke(messages))
 
 
 def invoke_structured(
@@ -17,6 +18,7 @@ def invoke_structured(
     messages: list[tuple[str, str]],
     check: Callable[[T], None] | None = None,
     max_retries: int = 2,
+    thinking_level: ThinkingLevel | None = None,
 ) -> T:
     """Call the LLM with structured output, retrying a bounded number of times on bad generations.
 
@@ -28,7 +30,7 @@ def invoke_structured(
     last_error: Exception | None = None
     for _ in range(max_retries + 1):
         try:
-            result = _generate(schema, messages)
+            result = _generate(schema, messages, thinking_level)
             if result is None:
                 raise OutputParserException("Model returned no structured output.")
             if check:

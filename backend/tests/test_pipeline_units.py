@@ -185,6 +185,55 @@ def test_condense_keeps_price_lines_and_drops_raw_page():
         "raw_content": "Header\nLaptop Acer Nitro V 15 i5/16GB 19.290.000đ 22.990.000đ\nFooter\nMSI Cyborg 27,490,000đ",
     })
     assert "raw_content" not in result
-    assert "19.290.000đ" in result["content"] and "27,490,000đ" in result["content"]
-    assert "Footer" not in result["content"]
-    assert _condense({"title": "T", "url": "u", "content": "s", "raw_content": "no prices"})["content"] == "s"
+    assert result["content"] == "snippet"
+    assert "19.290.000đ" in result["price_listing"] and "27,490,000đ" in result["price_listing"]
+    assert "Footer" not in result["price_listing"]
+    assert "price_listing" not in _condense({"title": "T", "url": "u", "content": "s", "raw_content": "no prices"})
+
+
+def test_extraction_sees_and_verifies_prices_behind_a_long_snippet(fake_pipeline):
+    # Regression: the price lines used to be appended to `content`, past the characters sent to the model
+    from app.graph.nodes.extract_products import _CONTENT_CHARS, extract_products_node
+    from tests.conftest import WEB_RESULTS
+
+    page = {"title": "Laptop Acer Nitro V 15 RTX 4050", "url": WEB_RESULTS[0]["url"],
+            "content": "i5-13420H 16GB SSD 512GB " + "x" * _CONTENT_CHARS,
+            "price_listing": "Acer Nitro V 15 i5-13420H 16GB 22.990.000đ"}
+    state = {"query": "laptop gaming", "web_results": [page, WEB_RESULTS[1]]}
+
+    products = extract_products_node(state)["products"]
+
+    sent = fake_pipeline.payloads["ProductExtraction"]["search_results"][0]
+    assert sent["price_listing"] == page["price_listing"]
+    assert products[0]["name"] == "Acer Nitro V 15" and products[0]["price"] == 22_990_000
+
+
+def test_extraction_prices_missing_products_by_lookup_and_drops_the_rest(fake_pipeline):
+    from app.graph.nodes.extract_products import extract_products_node
+    from app.schemas.product import Product
+    from tests.conftest import WEB_RESULTS
+
+    fake_pipeline.extracted = [
+        Product(name="Acer Nitro V 15 ANV15-41", source_url=WEB_RESULTS[0]["url"]),  # priceless, has a model code
+        Product(name="Dell Inspiron", source_url=WEB_RESULTS[0]["url"]),  # priceless, nothing to look up
+        Product(name="ASUS TUF A15", price=26_490_000, source_url=WEB_RESULTS[1]["url"]),
+    ]
+    fake_pipeline.price_lookup_results = [{"url": "https://fptshop.com.vn/anv15-41", "title": "Acer Nitro V ANV15-41",
+                                           "content": "Acer Nitro V ANV15-41 Ryzen 5 RTX 3050 21.990.000đ"}]
+
+    products = extract_products_node({"query": "laptop gaming", "web_results": WEB_RESULTS})["products"]
+
+    assert [p["name"] for p in products] == ["Acer Nitro V 15 ANV15-41", "ASUS TUF A15"]
+    assert products[0]["price"] == 21_990_000
+    assert products[0]["price_source_url"] == "https://fptshop.com.vn/anv15-41"
+    assert fake_pipeline.thinking_levels["ProductExtraction"] == "low"
+
+
+def test_select_results_prefers_pages_with_prices_and_caps_the_count():
+    from app.graph.nodes.extract_products import _MAX_RESULTS, select_results
+
+    results = [{"url": f"u{i}", "price_listing": "19.990.000đ" if i % 5 == 4 else None} for i in range(20)]
+    selected = select_results(results)
+    assert len(selected) == _MAX_RESULTS
+    assert [r["url"] for r in selected[:4]] == ["u4", "u9", "u14", "u19"]
+    assert selected[4]["url"] == "u0"

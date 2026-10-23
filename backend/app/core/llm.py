@@ -1,7 +1,7 @@
 import threading
 from collections.abc import Callable
 from functools import lru_cache
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 import httpx
 from google.genai.errors import ClientError, ServerError
@@ -75,8 +75,12 @@ def with_key_rotation(call: Callable[[str], T]) -> T:
     raise ApiKeysExhaustedError(f"All {len(keys)} Gemini API keys failed; last error: {last_error}") from last_error
 
 
+ThinkingLevel = Literal["minimal", "low", "medium", "high"]
+
+
 @lru_cache(maxsize=None)
-def chat_model(api_key: str) -> ChatGoogleGenerativeAI:
+def chat_model(api_key: str, thinking_level: ThinkingLevel | None = None) -> ChatGoogleGenerativeAI:
+    """`thinking_level` None keeps the model's default; lower it for calls that copy rather than reason."""
     return ChatGoogleGenerativeAI(
         model=settings.gemini_model,
         google_api_key=api_key,
@@ -84,6 +88,7 @@ def chat_model(api_key: str) -> ChatGoogleGenerativeAI:
         # 1 = a single attempt (0 means "SDK default"): a key-level failure should rotate at once,
         # not back off and retry on the same exhausted key
         max_retries=1,
+        thinking_level=thinking_level,
     )
 
 

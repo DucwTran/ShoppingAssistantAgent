@@ -10,8 +10,9 @@ for price and completeness claims. Explain why it fits (why_it_fits) and what th
 knowledge snippets to justify technical claims. If no candidate reasonably fits, set product_id to null and explain.
 
 Case 2 - candidates is empty: set product_id and alternative_id to null. If knowledge snippets answer the question,
-put the answer in why_it_fits. If research_status is "empty", say plainly that no matching products were found and
-suggest how the user could adjust the request - do not guess products.
+put the answer in why_it_fits. Otherwise say plainly that no matching product was found - research_status "empty"
+means the search returned nothing, "ok" means no result had a product with a verified price (only priced products are
+candidates) - and suggest how the user could adjust the request. Do not guess products.
 
 confidence (0-1) reflects how well the data supports the answer; lower it when specs/prices are missing.
 Never invent specifications, prices or facts not present in the input.

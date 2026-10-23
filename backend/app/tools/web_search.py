@@ -6,7 +6,7 @@ from langchain_tavily import TavilySearch
 from app.core.config import settings
 
 # A thousands-grouped amount with a VND marker, e.g. "19.290.000đ", "27,490,000 VNĐ"
-_PRICE_PATTERN = re.compile(r"\d{1,3}(?:[.,]\d{3}){2}\s*(?:đ|₫|VNĐ|VND)", re.IGNORECASE)
+PRICE_PATTERN = re.compile(r"\d{1,3}(?:[.,]\d{3}){2}\s*(?:đ|₫|VNĐ|VND)", re.IGNORECASE)
 _PRICE_LINES_CHARS = 1200
 
 
@@ -23,17 +23,16 @@ def _client() -> TavilySearch:
 
 
 def _condense(result: dict) -> dict:
-    """Replace the full page text with just its price-bearing lines, appended to the snippet.
+    """Replace the full page text with just its price-bearing lines, kept in `price_listing`.
 
     Tavily's snippet rarely includes prices, while retailer pages list "model ... specs ... price" on one
     line. Keeping only those lines gives extraction the data it needs at a bounded size, and keeps whole
-    pages out of graph state.
+    pages out of graph state. They stay out of `content` so that trimming a long snippet cannot cut them.
     """
     raw = result.pop("raw_content", None) or ""
-    price_lines = [" ".join(line.split()) for line in raw.splitlines() if _PRICE_PATTERN.search(line)]
+    price_lines = [" ".join(line.split()) for line in raw.splitlines() if PRICE_PATTERN.search(line)]
     if price_lines:
-        listing = "\n".join(price_lines)[:_PRICE_LINES_CHARS]
-        result["content"] = f"{result.get('content') or ''}\nPrice listings on page:\n{listing}"
+        result["price_listing"] = "\n".join(price_lines)[:_PRICE_LINES_CHARS]
     return result
 
 

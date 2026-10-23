@@ -7,7 +7,7 @@ A laptop shopping assistant for the Vietnamese market, built with LangGraph. It 
 - Recommendations from live listings on six Vietnamese retailers, with price, specs and source link
 - Hardware Q&A answered from a RAG knowledge base (CPU, GPU, RAM/storage/battery guides)
 - Human-in-the-loop: every recommendation pauses the graph; rejection feedback leads to a re-pick or a new search
-- Grounded output: products must come from a retrieved page, and prices or spec numbers missing from that page are dropped
+- Grounded output: products must come from a retrieved page, and prices or spec numbers missing from that page are dropped; only products with a verified price are recommended
 - Progress streamed over SSE; conversations persist across restarts and can be retried from the failed step
 - Vietnamese and English
 
@@ -34,7 +34,7 @@ flowchart TD
 | `metadata` | – | Detect Vietnamese or English |
 | `understand` | 1 call | Classify shopping vs. small talk; extract budget (VND), purpose, preferences, constraints |
 | `research_agent` | agent | Choose between web search and the knowledge base, up to 4 tool calls; falls back to a fixed search on failure |
-| `extract_products` | 1 call | Turn search results into products; drop ungrounded ones, clear unverified prices/specs, convert to VND |
+| `extract_products` | 1 call | Turn search results into products; drop ungrounded ones, clear unverified prices/specs, convert to VND; search once more for missing prices and drop products still without one |
 | `recommend` | 1 call | Code ranks candidates, the model picks one by id; name, price and link are copied from the source data |
 | `evaluator` | 1 call | Score 0–1: grounding, budget and spec completeness checked in code, purpose fit judged by the model |
 | `request_approval` | – | Announce the pause (separate node so it does not repeat on resume) |
@@ -79,8 +79,11 @@ npm run dev                                         # http://localhost:5173
 cd backend
 pytest                    # offline: full graph with a fake LLM, API, guards
 pytest -m live            # real Gemini/Tavily/index; uses API quota
-python -m evals.run_eval  # fixed query set against live services
+python -m evals.run_eval  # 20 labeled queries against live services
+python -m evals.check_judge  # LLM judge vs. hand-labeled recommendations
 ```
+
+Dataset, metrics and how to read them: [docs/eval.md](docs/eval.md).
 
 ## Repository layout
 
@@ -97,6 +100,7 @@ backend/
   evals/        evaluation script and query set
   tests/
 frontend/src/   chat UI, SSE client, conversation state
+docs/           evaluation guide
 ```
 
 ## Design notes
@@ -104,11 +108,13 @@ frontend/src/   chat UI, SSE client, conversation state
 - **One agent.** Only research needs decisions that depend on intermediate results (what to search, where, whether to search again). Every other step is a single structured-output call or plain code.
 - **Data bypasses model prose.** Tools return `content_and_artifact`: the agent reads a trimmed summary, while full results go into graph state from `ToolMessage.artifact`.
 - **Failure handling by layer.** Invalid structured output is regenerated; a key that hits its quota is rotated out; provider 5xx/timeouts are retried by `RetryPolicy`; an agent failure falls back to a fixed search; anything left is returned as a user-facing error with a retry that resumes from the checkpoint.
+- **Measured nodes.** Every LLM node reports its duration and token usage (including the agent's inner calls) as a `node_measured` event, logged by the server and aggregated by the eval.
 - **Retention.** Conversations idle for 24 hours are pruned from the checkpoint database at startup and hourly.
 
 ## Limitations
 
-- A shopping query takes roughly 30–60 s in live runs (sequential LLM calls and searches).
+- A shopping query takes 60 s at the median and 83 s at p95, about 23k tokens ([eval baseline](docs/eval.md#baseline)).
+- Gemini 503 overload errors that outlast the node retries still reach the user (3 of 20 eval cases).
 - No memory across questions; each question starts a new conversation.
 - Laptops only; USD is converted to VND at a fixed rate.
 - Some specs (e.g. battery life) rarely appear in listings.

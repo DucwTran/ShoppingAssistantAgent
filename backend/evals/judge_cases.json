@@ -1,0 +1,102 @@
+[
+  {
+    "id": "ai-gaming-rtx4060", "label": "good",
+    "state": {
+      "query": "laptop dưới 25 triệu cho lập trình AI và gaming", "budget": 25000000, "purpose": ["AI", "gaming"],
+      "products": [{"name": "Acer Nitro V 15", "price": 24490000, "currency": "VND", "cpu": "i5-13420H", "gpu": "RTX 4060 8GB",
+                    "ram": "16GB", "storage": "512GB", "source_url": "https://fptshop.com.vn/acer-nitro-v"}],
+      "recommendation": {"product_name": "Acer Nitro V 15", "price": 24490000, "currency": "VND",
+                         "url": "https://fptshop.com.vn/acer-nitro-v",
+                         "why_it_fits": ["RTX 4060 8GB VRAM chạy được model nhỏ và game AAA ở 1080p", "16GB RAM"],
+                         "tradeoffs": ["Pin yếu khi chơi game"], "alternative": null, "confidence": 0.8},
+      "retrieved_docs": [{"text": "RTX 4060 has 8GB VRAM, fine for small local models and 1080p gaming.", "source": "gpu_guide.md"}]
+    }
+  },
+  {
+    "id": "ai-gaming-igpu", "label": "bad",
+    "state": {
+      "query": "laptop dưới 25 triệu cho lập trình AI và gaming", "budget": 25000000, "purpose": ["AI", "gaming"],
+      "products": [{"name": "Dell Inspiron 15 3530", "price": 15990000, "currency": "VND", "cpu": "i5-1335U",
+                    "gpu": "Intel Iris Xe", "ram": "8GB", "storage": "512GB", "source_url": "https://thegioididong.com/dell-3530"}],
+      "recommendation": {"product_name": "Dell Inspiron 15 3530", "price": 15990000, "currency": "VND",
+                         "url": "https://thegioididong.com/dell-3530",
+                         "why_it_fits": ["Giá rẻ, còn dư ngân sách"], "tradeoffs": [], "alternative": null, "confidence": 0.6},
+      "retrieved_docs": []
+    }
+  },
+  {
+    "id": "student-light-vivobook", "label": "good",
+    "state": {
+      "query": "laptop mỏng nhẹ cho sinh viên dưới 15 triệu", "budget": 15000000, "purpose": ["study", "portable"],
+      "preferences": {"weight": "light"},
+      "products": [{"name": "ASUS Vivobook 14 OLED 1.39kg", "price": 14490000, "currency": "VND", "cpu": "i5-13500H",
+                    "gpu": "Intel Iris Xe", "ram": "16GB", "storage": "512GB", "source_url": "https://cellphones.com.vn/vivobook-14"}],
+      "recommendation": {"product_name": "ASUS Vivobook 14 OLED 1.39kg", "price": 14490000, "currency": "VND",
+                         "url": "https://cellphones.com.vn/vivobook-14",
+                         "why_it_fits": ["Nặng 1.39kg, dễ mang đi học", "16GB RAM đủ cho học tập và văn phòng"],
+                         "tradeoffs": ["Không chơi được game nặng"], "alternative": null, "confidence": 0.8},
+      "retrieved_docs": []
+    }
+  },
+  {
+    "id": "student-light-gaming-18in", "label": "bad",
+    "state": {
+      "query": "laptop mỏng nhẹ cho sinh viên dưới 15 triệu", "budget": 15000000, "purpose": ["study", "portable"],
+      "preferences": {"weight": "light"},
+      "products": [{"name": "ASUS ROG Strix G18 18 inch 3kg", "price": 14900000, "currency": "VND", "cpu": "i7-13650HX",
+                    "gpu": "RTX 4060", "ram": "16GB", "storage": "512GB", "source_url": "https://gearvn.com/rog-strix-g18"}],
+      "recommendation": {"product_name": "ASUS ROG Strix G18 18 inch 3kg", "price": 14900000, "currency": "VND",
+                         "url": "https://gearvn.com/rog-strix-g18",
+                         "why_it_fits": ["Cấu hình mạnh"], "tradeoffs": [], "alternative": null, "confidence": 0.7},
+      "retrieved_docs": []
+    }
+  },
+  {
+    "id": "video-macbook-pro", "label": "good",
+    "state": {
+      "query": "laptop dựng video 4K, ngân sách 45 triệu", "budget": 45000000, "purpose": ["video editing"],
+      "products": [{"name": "MacBook Pro 14 M3 Pro", "price": 44990000, "currency": "VND", "cpu": "Apple M3 Pro 11-core",
+                    "gpu": "M3 Pro 14-core GPU", "ram": "18GB", "storage": "512GB", "source_url": "https://fptshop.com.vn/macbook-pro-m3"}],
+      "recommendation": {"product_name": "MacBook Pro 14 M3 Pro", "price": 44990000, "currency": "VND",
+                         "url": "https://fptshop.com.vn/macbook-pro-m3",
+                         "why_it_fits": ["Media engine tăng tốc ProRes/H.265 khi dựng 4K", "18GB unified memory"],
+                         "tradeoffs": ["SSD 512GB nhanh đầy với video 4K"], "alternative": null, "confidence": 0.8},
+      "retrieved_docs": []
+    }
+  },
+  {
+    "id": "video-chromebook", "label": "bad",
+    "state": {
+      "query": "laptop dựng video 4K, ngân sách 45 triệu", "budget": 45000000, "purpose": ["video editing"],
+      "products": [{"name": "Acer Chromebook 314", "price": 6490000, "currency": "VND", "cpu": "Intel Celeron N4500",
+                    "gpu": "Intel UHD", "ram": "4GB", "storage": "64GB eMMC", "source_url": "https://thegioididong.com/chromebook-314"}],
+      "recommendation": {"product_name": "Acer Chromebook 314", "price": 6490000, "currency": "VND",
+                         "url": "https://thegioididong.com/chromebook-314",
+                         "why_it_fits": ["Rất rẻ"], "tradeoffs": [], "alternative": null, "confidence": 0.5},
+      "retrieved_docs": []
+    }
+  },
+  {
+    "id": "kb-answer-on-topic", "label": "good",
+    "state": {
+      "query": "RTX 4060 có đủ mạnh cho AI development không?", "budget": null, "purpose": ["AI"],
+      "products": [],
+      "recommendation": {"product_name": "N/A", "price": null, "currency": null, "url": null,
+                         "why_it_fits": ["RTX 4060 có 8GB VRAM: đủ để học và fine-tune model nhỏ, chạy LLM 7B đã lượng tử hóa",
+                                         "Model lớn hơn hoặc huấn luyện nặng cần 12-16GB VRAM trở lên"],
+                         "tradeoffs": [], "alternative": null, "confidence": 0.8},
+      "retrieved_docs": [{"text": "RTX 4060 has 8GB VRAM, fine for small local models; 12GB+ recommended for larger ones.", "source": "gpu_guide.md"}]
+    }
+  },
+  {
+    "id": "kb-answer-off-topic", "label": "bad",
+    "state": {
+      "query": "RTX 4060 có đủ mạnh cho AI development không?", "budget": null, "purpose": ["AI"],
+      "products": [],
+      "recommendation": {"product_name": "N/A", "price": null, "currency": null, "url": null,
+                         "why_it_fits": ["Nên chọn laptop có pin trên 60Wh để dùng cả ngày"],
+                         "tradeoffs": [], "alternative": null, "confidence": 0.5},
+      "retrieved_docs": [{"text": "RTX 4060 has 8GB VRAM, fine for small local models; 12GB+ recommended for larger ones.", "source": "gpu_guide.md"}]
+    }
+  }
+]

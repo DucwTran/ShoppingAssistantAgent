@@ -31,4 +31,3 @@ class Product(BaseModel):
     ram: str = "unknown"
     storage: str = "unknown"
     source_url: str = Field(default="unknown", description="url of the search result this product was taken from")
-    source_name: str = "unknown"

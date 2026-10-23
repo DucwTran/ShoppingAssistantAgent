@@ -60,9 +60,8 @@ def deterministic_checks(state: ShoppingState) -> tuple[dict[str, float], list[s
     return {"grounded": grounded, "budget_fit": budget_fit, "spec_completeness": spec_completeness}, reasons
 
 
-def evaluator_node(state: ShoppingState) -> dict:
-    scores, reasons = deterministic_checks(state)
-
+def judge_purpose(state: ShoppingState) -> PurposeJudgement:
+    """LLM-as-judge for the one criterion code cannot check: does the answer serve the stated purpose."""
     payload = {
         "question": state["query"],
         "requirements": requirements_of(state),
@@ -70,10 +69,15 @@ def evaluator_node(state: ShoppingState) -> dict:
         "recommended_product_specs": _recommended_product(state),
         "knowledge": state.get("retrieved_docs", []),
     }
-    judgement = invoke_structured(
+    return invoke_structured(
         PurposeJudgement,
         [("system", EVALUATOR_SYSTEM_PROMPT), ("human", json.dumps(payload, ensure_ascii=False))],
     )
+
+
+def evaluator_node(state: ShoppingState) -> dict:
+    scores, reasons = deterministic_checks(state)
+    judgement = judge_purpose(state)
     scores["purpose_fit"] = judgement.purpose_fit
 
     score = round(sum(_WEIGHTS[name] * value for name, value in scores.items()), 2)

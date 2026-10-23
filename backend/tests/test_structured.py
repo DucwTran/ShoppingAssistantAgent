@@ -8,7 +8,7 @@ def _use(monkeypatch, *outcomes) -> list:
     """Script the LLM: each call returns or raises the next outcome; returns the outcomes left."""
     remaining = list(outcomes)
 
-    def generate(schema, messages):
+    def generate(schema, messages, thinking_level):
         outcome = remaining.pop(0)
         if isinstance(outcome, Exception):
             raise outcome

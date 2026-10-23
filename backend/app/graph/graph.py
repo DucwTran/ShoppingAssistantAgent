@@ -4,6 +4,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from app.core.config import settings
+from app.core.metrics import measured
 from app.graph.nodes.evaluator import evaluator_node
 from app.graph.nodes.extract_products import extract_products_node
 from app.graph.nodes.feedback_router import feedback_router_node
@@ -36,18 +37,23 @@ def _route_after_feedback(state: ShoppingState) -> str:
     return "research_agent" if state.get("research_hint") else "recommend"
 
 
+def _add_llm_node(graph: StateGraph, name: str, node, retry_policy: RetryPolicy | None = _LLM_RETRY) -> None:
+    """Nodes that call the LLM report their duration and token usage (see app.core.metrics)."""
+    graph.add_node(name, measured(name, node), retry_policy=retry_policy)
+
+
 def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph = StateGraph(ShoppingState)
     graph.add_node("input_validation", input_validation_node)
     graph.add_node("metadata", metadata_node)
-    graph.add_node("understand", understand_node, retry_policy=_LLM_RETRY)
-    graph.add_node("research_agent", research_agent_node)
-    graph.add_node("extract_products", extract_products_node, retry_policy=_LLM_RETRY)
-    graph.add_node("recommend", recommend_node, retry_policy=_LLM_RETRY)
-    graph.add_node("evaluator", evaluator_node, retry_policy=_LLM_RETRY)
+    _add_llm_node(graph, "understand", understand_node)
+    _add_llm_node(graph, "research_agent", research_agent_node, retry_policy=None)
+    _add_llm_node(graph, "extract_products", extract_products_node)
+    _add_llm_node(graph, "recommend", recommend_node)
+    _add_llm_node(graph, "evaluator", evaluator_node)
     graph.add_node("request_approval", request_approval_node)
     graph.add_node("human_approval", human_approval_node)
-    graph.add_node("feedback_router", feedback_router_node, retry_policy=_LLM_RETRY)
+    _add_llm_node(graph, "feedback_router", feedback_router_node)
 
     graph.add_edge(START, "input_validation")
     graph.add_edge("input_validation", "metadata")
