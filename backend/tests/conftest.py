@@ -1,5 +1,6 @@
 """Offline doubles for the graph: every LLM call and the research agent loop are replaced, the rest runs for real."""
 
+import json
 from dataclasses import dataclass, field
 
 import pytest
@@ -44,9 +45,14 @@ class FakePipeline:
     calls: list[str] = field(default_factory=list)
     # schema name -> error raised once, the next time that schema is requested
     failures: dict[str, Exception] = field(default_factory=dict)
+    # schema name -> JSON payload of the latest request for it
+    payloads: dict[str, dict] = field(default_factory=dict)
 
     def structured(self, schema, messages, check=None, max_retries=2):
         self.calls.append(schema.__name__)
+        human = messages[-1][1]
+        if human.startswith("{"):
+            self.payloads[schema.__name__] = json.loads(human)
         if schema.__name__ in self.failures:
             raise self.failures.pop(schema.__name__)
         if schema is QueryUnderstanding:

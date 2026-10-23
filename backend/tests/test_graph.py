@@ -21,7 +21,7 @@ def _thread_config():
 def test_build_graph_includes_all_nodes():
     node_names = set(build_graph().get_graph().nodes)
     assert {"understand", "research_agent", "extract_products", "recommend", "evaluator",
-            "human_approval", "feedback_router"} <= node_names
+            "request_approval", "human_approval", "feedback_router"} <= node_names
 
 
 def test_route_after_understand():
@@ -47,6 +47,21 @@ def test_input_validation_rejects_empty_query():
 
 
 # --- full graph, offline (fake LLM + fake agent loop) ---------------------------------------------
+
+
+def _events(graph, graph_input, config) -> list[str]:
+    return [event["event"] for event in graph.stream(graph_input, config, stream_mode="custom")]
+
+
+def test_approval_events_are_emitted_once_across_pause_and_resume(fake_pipeline):
+    # Resuming re-runs the interrupted node from its first line, so anything placed before
+    # interrupt() would run - and emit - a second time.
+    graph, config = build_graph(), _thread_config()
+    events = _events(graph, {"query": "laptop gaming dưới 25 triệu"}, config)
+    events += _events(graph, Command(resume={"approved": True, "feedback": None}), config)
+
+    assert events.count("hitl_required") == 1
+    assert events.count("hitl_resolved") == 1
 
 
 def test_offline_flow_grounds_products_and_pauses_for_approval(fake_pipeline):
@@ -96,6 +111,20 @@ def test_offline_reject_satisfiable_from_candidates_skips_research(fake_pipeline
     assert recommendation["product_name"] == "ASUS TUF A15"
     # 26.49M > 25M budget: the guard must disclose it even though the model listed no tradeoffs
     assert any("budget" in t for t in recommendation["tradeoffs"])
+
+
+def test_offline_second_rejection_keeps_the_first_feedback(fake_pipeline):
+    graph, config = build_graph(), _thread_config()
+    graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
+
+    fake_pipeline.needs_new_products = True
+    graph.invoke(Command(resume={"approved": False, "feedback": "prefer AMD GPU"}), config)
+    fake_pipeline.needs_new_products = False
+    graph.invoke(Command(resume={"approved": False, "feedback": "cheaper"}), config)
+
+    expected = ["prefer AMD GPU", "cheaper"]
+    assert fake_pipeline.payloads["FeedbackDecision"]["feedback"] == expected
+    assert fake_pipeline.payloads["RecommendationChoice"]["human_feedback"] == expected
 
 
 def test_offline_empty_research_is_reported_not_guessed(fake_pipeline, monkeypatch):

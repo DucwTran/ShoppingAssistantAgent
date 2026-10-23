@@ -35,7 +35,7 @@ class ShoppingState(TypedDict, total=False):
 
     # Human-in-the-loop
     human_approval: bool | None
-    human_feedback: str | None
+    human_feedback: list[str]  # reason given with each rejection, oldest first
     human_rejection_count: int
 
     # Final result

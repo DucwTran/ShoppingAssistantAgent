@@ -59,7 +59,7 @@ def recommend_node(state: ShoppingState) -> dict:
         "price_extremes": price_extremes(products),
         "knowledge": state.get("retrieved_docs", []),
         "research_status": state.get("research_status", "ok"),
-        "human_feedback": state.get("human_feedback"),
+        "human_feedback": state.get("human_feedback", []),
     }
     choice = invoke_structured(
         RecommendationChoice,

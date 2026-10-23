@@ -12,8 +12,14 @@ _WEIGHTS = {"purpose_fit": 0.35, "grounded": 0.25, "budget_fit": 0.2, "spec_comp
 
 
 def _recommended_product(state: ShoppingState) -> dict | None:
-    url = (state.get("recommendation") or {}).get("url")
-    return next((p for p in state.get("products", []) if url and p.get("source_url") == url), None)
+    # One listing page can yield several products, so the url alone is ambiguous; (url, name) is unique
+    # because grounding drops duplicate names.
+    recommendation = state.get("recommendation") or {}
+    url, name = recommendation.get("url"), recommendation.get("product_name")
+    return next(
+        (p for p in state.get("products", []) if url and p.get("source_url") == url and p.get("name") == name),
+        None,
+    )
 
 
 def deterministic_checks(state: ShoppingState) -> tuple[dict[str, float], list[str]]:

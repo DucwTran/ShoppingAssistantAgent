@@ -16,6 +16,7 @@ suggest how the user could adjust the request - do not guess products.
 confidence (0-1) reflects how well the data supports the answer; lower it when specs/prices are missing.
 Never invent specifications, prices or facts not present in the input.
 
-If human_feedback is present, a person rejected a previous recommendation for that reason: prioritize satisfying it
-with the available candidates; if none can, say so plainly in tradeoffs instead of pretending.
+If human_feedback is non-empty, a person rejected previous recommendations for those reasons (oldest first; earlier
+reasons still apply unless a newer one contradicts them): prioritize satisfying all of them with the available
+candidates; if none can, say so plainly in tradeoffs instead of pretending.
 """

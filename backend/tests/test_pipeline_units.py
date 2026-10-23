@@ -128,6 +128,20 @@ def test_deterministic_checks_flags_over_budget_and_ungrounded():
     assert any("exceeds budget" in r for r in reasons)
 
 
+def test_deterministic_checks_picks_the_named_product_when_a_page_lists_several():
+    page = "https://shop.vn/gaming"
+    products = [
+        {"name": "Cheap", "price": None, "cpu": "unknown", "gpu": "unknown", "ram": "unknown", "storage": "unknown",
+         "source_url": page},
+        {**_PRODUCTS[1], "source_url": page},
+    ]
+    state = {"budget": 25_000_000, "products": products,
+             "recommendation": {"product_name": "B", "price": 20_000_000, "url": page}}
+    scores, reasons = deterministic_checks(state)
+    assert scores["spec_completeness"] == 1.0
+    assert reasons == []
+
+
 def test_deterministic_checks_knowledge_answer_depends_on_docs():
     na = {"product_name": "N/A", "price": None, "url": None}
     assert deterministic_checks({"recommendation": na, "retrieved_docs": [{"text": "x"}]})[0]["grounded"] == 1.0

@@ -10,9 +10,9 @@ _CANDIDATE_FIELDS = ("name", "price", "currency", "cpu", "gpu", "ram")
 
 
 def feedback_router_node(state: ShoppingState) -> dict:
-    feedback = state.get("human_feedback") or ""
+    feedback = state.get("human_feedback", [])
     products = state.get("products", [])
-    default_hint = f"{state['query']} {feedback}".strip()[:400]
+    default_hint = " ".join([state["query"], *feedback])[:400]
 
     if not products:
         # Nothing to re-pick from - any feedback can only be met by searching again.

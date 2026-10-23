@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.graph.nodes.evaluator import evaluator_node
 from app.graph.nodes.extract_products import extract_products_node
 from app.graph.nodes.feedback_router import feedback_router_node
-from app.graph.nodes.human_approval import human_approval_node
+from app.graph.nodes.human_approval import human_approval_node, request_approval_node
 from app.graph.nodes.input_validation import input_validation_node
 from app.graph.nodes.metadata import metadata_node
 from app.graph.nodes.recommend import recommend_node
@@ -45,6 +45,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("extract_products", extract_products_node, retry_policy=_LLM_RETRY)
     graph.add_node("recommend", recommend_node, retry_policy=_LLM_RETRY)
     graph.add_node("evaluator", evaluator_node, retry_policy=_LLM_RETRY)
+    graph.add_node("request_approval", request_approval_node)
     graph.add_node("human_approval", human_approval_node)
     graph.add_node("feedback_router", feedback_router_node, retry_policy=_LLM_RETRY)
 
@@ -55,7 +56,8 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_edge("research_agent", "extract_products")
     graph.add_edge("extract_products", "recommend")
     graph.add_edge("recommend", "evaluator")
-    graph.add_edge("evaluator", "human_approval")
+    graph.add_edge("evaluator", "request_approval")
+    graph.add_edge("request_approval", "human_approval")
     graph.add_conditional_edges("human_approval", _route_after_human_approval, ["feedback_router", END])
     graph.add_conditional_edges("feedback_router", _route_after_feedback, ["research_agent", "recommend"])
 

@@ -41,7 +41,7 @@ def test_human_approval_interrupts_then_resolves_on_approve():
     result = graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
     assert "__interrupt__" not in result
     assert result["human_approval"] is True
-    assert result["human_feedback"] is None
+    assert result["human_feedback"] == []
 
 
 def test_human_approval_resolves_on_reject_with_feedback():
@@ -52,4 +52,17 @@ def test_human_approval_resolves_on_reject_with_feedback():
     result = graph.invoke(Command(resume={"approved": False, "feedback": "cheaper option"}), config)
 
     assert result["human_approval"] is False
-    assert result["human_feedback"] == "cheaper option"
+    assert result["human_feedback"] == ["cheaper option"]
+
+
+def test_human_approval_keeps_earlier_feedback_and_skips_blank():
+    graph = _build_approval_only_graph()
+    config = {"configurable": {"thread_id": "test-history"}}
+
+    graph.invoke({"recommendation": {"product_name": "Laptop X"}, "human_feedback": ["prefer AMD GPU"]}, config)
+    result = graph.invoke(Command(resume={"approved": False, "feedback": "  cheaper  "}), config)
+    assert result["human_feedback"] == ["prefer AMD GPU", "cheaper"]
+
+    graph.invoke({"recommendation": {"product_name": "Laptop Y"}, "human_feedback": ["prefer AMD GPU"]}, config)
+    result = graph.invoke(Command(resume={"approved": False, "feedback": "   "}), config)
+    assert result["human_feedback"] == ["prefer AMD GPU"]
