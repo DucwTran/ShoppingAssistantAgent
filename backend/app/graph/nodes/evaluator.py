@@ -29,6 +29,12 @@ def deterministic_checks(state: ShoppingState) -> tuple[dict[str, float], list[s
     reasons: list[str] = []
 
     if recommendation.get("product_name") == NO_PRODUCT:
+        # Declining is right when nothing fits the budget, suspect when priced in-budget candidates were found.
+        affordable = [p for p in state.get("products", [])
+                      if p.get("price") is not None and (not budget or p["price"] <= budget)]
+        if affordable:
+            reasons.append(f"no product recommended although {len(affordable)} in-budget candidates were found")
+            return {"grounded": 0.0, "budget_fit": 0.0, "spec_completeness": 1.0}, reasons
         # A knowledge answer has no price/specs to check; it is only as good as its knowledge support.
         grounded = 1.0 if state.get("retrieved_docs") else 0.3
         if grounded < 1.0:

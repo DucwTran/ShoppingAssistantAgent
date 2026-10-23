@@ -133,6 +133,7 @@ def score_case(case: dict, state: dict, events: list[dict], latency_s: float, er
     checks = _checks(case.get("expect", {}), state, tools_called, followup)
     nodes = _node_usage(events)
     purpose_fit = next((e["purpose_fit"] for e in reversed(events) if e["event"] == "evaluator_done"), None)
+    recommendation = state.get("recommendation") or {}
 
     return {
         "id": case["id"],
@@ -149,9 +150,14 @@ def score_case(case: dict, state: dict, events: list[dict], latency_s: float, er
         # Why a run degraded: warning events (e.g. research_agent_failed) and node attempts that failed and were retried
         "warnings": sorted({e["event"] for e in events if e.get("status") == "warning" and e["event"] != "node_measured"}),
         "failed_attempts": sum(1 for e in events if e["event"] == "node_measured" and e["failed"]),
-        "product": (state.get("recommendation") or {}).get("product_name"),
+        "product": recommendation.get("product_name"),
+        "candidates": len(state.get("products", [])),
+        # The model's own reasoning, so a surprising answer (e.g. N/A despite candidates) can be explained
+        "why_it_fits": recommendation.get("why_it_fits"),
+        "tradeoffs": recommendation.get("tradeoffs"),
         "quality_score": state.get("quality_score"),
         "purpose_fit": purpose_fit,
+        "evaluation_feedback": state.get("evaluation_feedback"),
         "latency_s": latency_s,
         "followup_latency_s": followup["latency_s"] if followup else None,
         "tokens": sum(n["input_tokens"] + n["output_tokens"] for n in nodes.values()),

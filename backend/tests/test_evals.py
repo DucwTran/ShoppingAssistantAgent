@@ -62,6 +62,7 @@ def test_score_case_checks_labels_and_answer_quality():
     assert row["budget_honest"] is True  # over budget, but disclosed in tradeoffs
     assert row["nodes"]["recommend"] == {"ms": 1000, "input_tokens": 1500, "output_tokens": 200}
     assert row["tokens"] == 1700 and row["purpose_fit"] == 0.9
+    assert row["candidates"] == 1 and row["tradeoffs"] == ["Vượt ngân sách 1 triệu"]
 
 
 def test_score_case_fails_on_wrong_labels_and_undisclosed_overrun():
