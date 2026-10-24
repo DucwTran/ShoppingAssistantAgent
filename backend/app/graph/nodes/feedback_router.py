@@ -2,7 +2,7 @@ import json
 
 from app.core.events import emit
 from app.core.structured import invoke_structured
-from app.graph.state import ShoppingState
+from app.graph.state import ShoppingState, question_of
 from app.prompts.feedback_router_prompt import FEEDBACK_ROUTER_SYSTEM_PROMPT
 from app.schemas.feedback import FeedbackDecision
 
@@ -12,14 +12,14 @@ _CANDIDATE_FIELDS = ("name", "price", "currency", "cpu", "gpu", "ram")
 def feedback_router_node(state: ShoppingState) -> dict:
     feedback = state.get("human_feedback", [])
     products = state.get("products", [])
-    default_hint = " ".join([state["query"], *feedback])[:400]
+    default_hint = " ".join([question_of(state), *feedback])[:400]
 
     if not products:
         # Nothing to re-pick from - any feedback can only be met by searching again.
         hint = default_hint
     else:
         payload = {
-            "original_question": state["query"],
+            "original_question": question_of(state),
             "feedback": feedback,
             "current_candidates": [{key: p.get(key) for key in _CANDIDATE_FIELDS} for p in products],
         }

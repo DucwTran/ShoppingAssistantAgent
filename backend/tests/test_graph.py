@@ -1,7 +1,6 @@
 import uuid
 
 import pytest
-from langgraph.graph import END
 from langgraph.types import Command
 
 from app.core.config import settings
@@ -21,19 +20,19 @@ def _thread_config():
 def test_build_graph_includes_all_nodes():
     node_names = set(build_graph().get_graph().nodes)
     assert {"understand", "research_agent", "extract_products", "recommend", "evaluator",
-            "request_approval", "human_approval", "feedback_router"} <= node_names
+            "request_approval", "human_approval", "feedback_router", "record_turn"} <= node_names
 
 
 def test_route_after_understand():
     assert _route_after_understand({"intent": "shopping"}) == "research_agent"
-    assert _route_after_understand({"intent": "general"}) == END
+    assert _route_after_understand({"intent": "general"}) == "record_turn"
 
 
 def test_route_after_human_approval():
-    assert _route_after_human_approval({"human_approval": True}) == END
+    assert _route_after_human_approval({"human_approval": True}) == "record_turn"
     assert _route_after_human_approval({"human_approval": False}) == "feedback_router"
     capped = {"human_approval": False, "human_rejection_count": settings.max_human_rejections}
-    assert _route_after_human_approval(capped) == END
+    assert _route_after_human_approval(capped) == "record_turn"
 
 
 def test_route_after_feedback():
@@ -125,6 +124,36 @@ def test_offline_second_rejection_keeps_the_first_feedback(fake_pipeline):
     expected = ["prefer AMD GPU", "cheaper"]
     assert fake_pipeline.payloads["FeedbackDecision"]["feedback"] == expected
     assert fake_pipeline.payloads["RecommendationChoice"]["human_feedback"] == expected
+
+
+def test_offline_follow_up_keeps_history_and_resets_the_turn(fake_pipeline):
+    graph, config = build_graph(), _thread_config()
+    graph.invoke({"query": "laptop gaming dưới 25 triệu"}, config)
+    graph.invoke(Command(resume={"approved": False, "feedback": "the ASUS instead"}), config)
+    graph.invoke(Command(resume={"approved": True, "feedback": None}), config)
+
+    fake_pipeline.standalone_query = "laptop gaming rẻ hơn Acer Nitro V 15"
+    result = graph.invoke({"query": "còn máy nào rẻ hơn không?"}, config)
+
+    state = graph.get_state(config).values
+    assert "__interrupt__" in result
+    assert [turn["question"] for turn in state["history"]] == ["laptop gaming dưới 25 triệu"]
+    assert state["history"][0]["answer"].startswith("Recommended Acer Nitro V 15")
+    # The previous turn's rejection and feedback do not carry over
+    assert state["human_rejection_count"] == 0 and state["human_feedback"] == []
+    # understand sees the history; the rest of the pipeline reads the resolved question
+    assert fake_pipeline.payloads["QueryUnderstanding"]["message"] == "còn máy nào rẻ hơn không?"
+    assert fake_pipeline.payloads["RecommendationChoice"]["question"] == "laptop gaming rẻ hơn Acer Nitro V 15"
+
+
+def test_offline_history_keeps_the_most_recent_turns(fake_pipeline, monkeypatch):
+    monkeypatch.setattr(settings, "max_history_turns", 2)
+    fake_pipeline.is_shopping = False
+    graph, config = build_graph(), _thread_config()
+    for query in ("hi", "hello", "xin chào"):
+        graph.invoke({"query": query}, config)
+
+    assert [turn["question"] for turn in graph.get_state(config).values["history"]] == ["hello", "xin chào"]
 
 
 def test_offline_empty_research_is_reported_not_guessed(fake_pipeline, monkeypatch):

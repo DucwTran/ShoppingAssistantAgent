@@ -7,12 +7,13 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from app.api.dependencies import get_graph
+from app.api.rate_limit import rate_limit
 from app.api.v1.schemas.shopping import QueryRequest, ResumeRequest, ShoppingResponse, ShoppingResultData
 from app.core.config import settings
 from app.core.errors import to_app_error
 from app.guards.input_guard import validate_input
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(rate_limit)])
 
 
 def _config(thread_id: str) -> dict:
@@ -44,23 +45,40 @@ def _conflict(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=409, detail={"code": code, "message": message})
 
 
-def _unfinished_snapshot(graph, thread_id: str):
+def _existing_snapshot(graph, thread_id: str):
     snapshot = graph.get_state(_config(thread_id))
     if not snapshot.values:
         raise HTTPException(
             status_code=404,
             detail={"code": "thread_not_found", "message": f"No thread with id '{thread_id}'."},
         )
+    return snapshot
+
+
+def _unfinished_snapshot(graph, thread_id: str):
+    snapshot = _existing_snapshot(graph, thread_id)
     if not snapshot.next:
         raise _conflict("thread_already_finished", f"Thread '{thread_id}' has already finished.")
     return snapshot
+
+
+def _thread_for_question(graph, thread_id: str | None) -> str:
+    """A new conversation, or a finished one continued with a follow-up question."""
+    if thread_id is None:
+        return str(uuid.uuid4())
+    if _existing_snapshot(graph, thread_id).next:
+        raise _conflict("conversation_busy",
+                        f"Thread '{thread_id}' is waiting for a decision or a retry; finish that turn first.")
+    return thread_id
 
 
 def _resume_command(graph, thread_id: str, body: ResumeRequest) -> Command:
     """The human decision, accepted only while the thread is paused for it."""
     if not _unfinished_snapshot(graph, thread_id).interrupts:
         raise _conflict("not_awaiting_decision", f"Thread '{thread_id}' is not waiting for a decision.")
-    return Command(resume={"approved": body.approved, "feedback": body.feedback})
+    # Feedback reaches the prompts like a query does, so it passes the same guard
+    feedback = validate_input(body.feedback, label="Feedback") if body.feedback and body.feedback.strip() else None
+    return Command(resume={"approved": body.approved, "feedback": feedback})
 
 
 def _ensure_failed(graph, thread_id: str) -> None:
@@ -103,7 +121,8 @@ def _event_stream(frames: Iterator[str]) -> StreamingResponse:
 
 @router.post("/query", response_model=ShoppingResponse)
 def query(body: QueryRequest, graph=Depends(get_graph)) -> ShoppingResponse:
-    return _invoke(graph, {"query": validate_input(body.query)}, str(uuid.uuid4()))
+    query_text = validate_input(body.query)
+    return _invoke(graph, {"query": query_text}, _thread_for_question(graph, body.thread_id))
 
 
 @router.post("/resume/{thread_id}", response_model=ShoppingResponse)
@@ -122,7 +141,7 @@ def retry(thread_id: str, graph=Depends(get_graph)) -> ShoppingResponse:
 def query_stream(body: QueryRequest, graph=Depends(get_graph)) -> StreamingResponse:
     # Validated before streaming starts so a bad query still gets a proper 400, not an in-band error.
     query_text = validate_input(body.query)
-    thread_id = str(uuid.uuid4())
+    thread_id = _thread_for_question(graph, body.thread_id)
     return _event_stream(_stream_run(graph, {"query": query_text}, thread_id))
 
 

@@ -1,11 +1,12 @@
 """Run the graph on the labeled query set and report accuracy, grounding, latency and token usage.
 
 Usage (from backend/):
-    python -m evals.run_eval [--kind shopping|knowledge|general|followup] [--case ID] [--limit N] [--repeat N]
+    python -m evals.run_eval [--kind shopping|knowledge|general|followup|multiturn] [--case ID] [--limit N] [--repeat N]
 
 Calls the real Gemini API and Tavily. Each run stops at the human-approval pause; a "followup" case
-first rejects the recommendation with its `reject_with` feedback. Labels live in cases.json and
-the metrics are described in docs/eval.md.
+first rejects the recommendation with its `reject_with` feedback, and a "multiturn" case accepts it
+and asks its `then` question in the same conversation. Labels live in cases.json and the metrics are
+described in docs/eval.md.
 """
 
 import argparse
@@ -26,6 +27,7 @@ from app.schemas.recommendation import NO_PRODUCT
 
 _HERE = Path(__file__).parent
 _BUDGET_WORDS = ("budget", "ngân sách")
+_CHECKS = ("intent", "budget", "tools", "product", "reroute", "previous_price", "previous_product")
 
 
 # --- running --------------------------------------------------------------------------------------
@@ -56,6 +58,15 @@ def run_case(graph, case: dict) -> dict:
             "latency_s": followup_latency,
             "new_search": graph.get_state(config).values.get("research_hint") is not None,
         }
+    elif case.get("then") and not error and graph.get_state(config).interrupts:
+        # Accept the first answer, then ask the follow-up question in the same conversation
+        previous = graph.get_state(config).values.get("recommendation") or {}
+        approve_events, _, error = _stream(graph, Command(resume={"approved": True, "feedback": None}), config)
+        events += approve_events
+        followup = {"latency_s": None, "previous": previous}
+        if not error:
+            then_events, followup["latency_s"], error = _stream(graph, {"query": case["then"]}, config)
+            events += then_events
 
     return score_case(case, graph.get_state(config).values, events, latency, error, followup)
 
@@ -88,7 +99,7 @@ def _price_filter(events: list[dict]) -> dict[str, int | bool]:
 def _checks(expect: dict, state: dict, tools_called: set[str], followup: dict | None) -> dict[str, bool | None]:
     """Compare the run with the case's labels; None means the case does not label that aspect."""
     recommendation = state.get("recommendation") or {}
-    checks: dict[str, bool | None] = {"intent": None, "budget": None, "tools": None, "product": None, "reroute": None}
+    checks: dict[str, bool | None] = dict.fromkeys(_CHECKS)
 
     if "intent" in expect:
         checks["intent"] = state.get("intent") == expect["intent"]
@@ -103,6 +114,17 @@ def _checks(expect: dict, state: dict, tools_called: set[str], followup: dict | 
         checks["product"] = recommended == expect["product"]
     if "new_search_after_reject" in expect:
         checks["reroute"] = followup is not None and followup["new_search"] == expect["new_search_after_reject"]
+
+    # Multi-turn: the follow-up must build on the first answer
+    previous = (followup or {}).get("previous") or {}
+    if "budget_below_previous_price" in expect:
+        price, budget = previous.get("price"), state.get("budget")
+        checks["previous_price"] = price is not None and budget is not None and budget < price
+    if "mentions_previous_product" in expect:
+        # Brand and line ("ASUS Vivobook") are what a rewrite keeps even when it drops the SKU
+        name = " ".join((previous.get("product_name") or "").split()[:2]).lower()
+        checks["previous_product"] = bool(name) and previous.get("product_name") != NO_PRODUCT \
+            and name in (state.get("standalone_query") or "").lower()
     return checks
 
 
@@ -211,8 +233,7 @@ def summarize(rows: list[dict]) -> dict:
         "errors": sum(r["error"] is not None for r in rows),
         "failed_attempts": sum(r["failed_attempts"] for r in rows),
         "passed": _rate(r["passed"] for r in rows),
-        "accuracy": {check: _rate(r["checks"][check] for r in completed)
-                     for check in ("intent", "budget", "tools", "product", "reroute")},
+        "accuracy": {check: _rate(r["checks"][check] for r in completed) for check in _CHECKS},
         "answer_quality": {
             "grounded": _rate(r["grounded"] for r in completed),
             "price_known": _rate(r["price_known"] for r in completed),
@@ -255,7 +276,7 @@ def _failed_checks(row: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kind", choices=["shopping", "knowledge", "general", "followup"])
+    parser.add_argument("--kind", choices=["shopping", "knowledge", "general", "followup", "multiturn"])
     parser.add_argument("--case", help="run only the case with this id")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--repeat", type=int, default=1, help="run every case N times to expose unstable results")

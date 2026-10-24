@@ -6,7 +6,9 @@ from evals.check_judge import agrees
 from evals.run_eval import _percentile, run_case, score_case, summarize
 
 _EVALS = Path(__file__).parent.parent / "evals"
-_EXPECT_KEYS = {"intent", "budget_vnd", "tools", "product", "new_search_after_reject"}
+_EXPECT_KEYS = {"intent", "budget_vnd", "tools", "product", "new_search_after_reject",
+                "budget_below_previous_price", "mentions_previous_product"}
+_MULTITURN_KEYS = {"budget_below_previous_price", "mentions_previous_product"}
 
 _STATE = {
     "intent": "shopping",
@@ -38,15 +40,40 @@ def test_eval_cases_are_well_formed():
     cases = json.loads((_EVALS / "cases.json").read_text(encoding="utf-8"))
     assert len({c["id"] for c in cases}) == len(cases), "case ids must be unique"
     for case in cases:
-        assert case["kind"] in {"shopping", "knowledge", "general", "followup"}, case["id"]
+        assert case["kind"] in {"shopping", "knowledge", "general", "followup", "multiturn"}, case["id"]
         assert set(case["expect"]) <= _EXPECT_KEYS, case["id"]
         assert ("reject_with" in case) == ("new_search_after_reject" in case["expect"]), case["id"]
+        assert ("then" in case) == bool(_MULTITURN_KEYS & set(case["expect"])), case["id"]
 
 
 def test_judge_cases_are_labeled_and_balanced():
     cases = json.loads((_EVALS / "judge_cases.json").read_text(encoding="utf-8"))
     labels = [c["label"] for c in cases]
     assert set(labels) == {"good", "bad"} and labels.count("good") == labels.count("bad")
+
+
+def test_injection_cases_are_well_formed():
+    from evals.check_injection import _RUNNERS
+
+    cases = json.loads((_EVALS / "injection_cases.json").read_text(encoding="utf-8"))
+    assert len({c["id"] for c in cases}) == len(cases)
+    for case in cases:
+        assert case["node"] in _RUNNERS, case["id"]
+        assert case["vector"] in {"direct", "indirect"}, case["id"]
+        assert case.get("must_not_contain") or case.get("must_equal"), case["id"]
+
+
+def test_injection_violations_check_nested_fields_case_insensitively():
+    from evals.check_injection import field_value, violations
+
+    output = {"intent": "general", "recommendation": {"product_name": "hacker laptop x"}}
+    case = {"must_not_contain": {"recommendation.product_name": ["Hacker"], "general_reply": ["PWNED"]},
+            "must_equal": {"intent": "shopping"}}
+    assert field_value(output, "recommendation.product_name") == "hacker laptop x"
+    assert field_value(output, "missing.path") is None
+    assert violations(case, output) == ["recommendation.product_name contains 'Hacker'",
+                                        "intent is 'general', expected 'shopping'"]
+    assert violations({"must_not_contain": {"general_reply": ["PWNED"]}}, {"general_reply": "Xin chào"}) == []
 
 
 # --- scoring --------------------------------------------------------------------------------------
@@ -57,7 +84,8 @@ def test_score_case_checks_labels_and_answer_quality():
                      _STATE, _EVENTS, latency_s=12.0, error=None)
 
     assert row["passed"] is True
-    assert row["checks"] == {"intent": True, "budget": True, "tools": True, "product": True, "reroute": None}
+    assert row["checks"] == {"intent": True, "budget": True, "tools": True, "product": True, "reroute": None,
+                             "previous_price": None, "previous_product": None}
     assert row["grounded"] is True and row["price_known"] is True
     assert row["budget_honest"] is True  # over budget, but disclosed in tradeoffs
     assert row["nodes"]["recommend"] == {"ms": 1000, "input_tokens": 1500, "output_tokens": 200}
@@ -155,6 +183,18 @@ def test_run_case_offline_reports_an_answer_emptied_by_the_price_filter(fake_pip
     row = run_case(build_graph(), _case(product=True))
     assert row["emptied_by_price_filter"] is True and row["dropped_no_price"] == 1
     assert row["checks"]["product"] is False  # the cost of the filter shows up as a failed product check
+
+
+def test_run_case_offline_multiturn_checks_the_follow_up(fake_pipeline):
+    case = {"id": "m", "kind": "multiturn", "query": "laptop gaming dưới 25 triệu", "then": "còn máy nào rẻ hơn không?",
+            "expect": {"budget_below_previous_price": True, "mentions_previous_product": True}}
+    # The fake keeps a 25M budget, above the first answer's 22.99M: "cheaper" was not applied
+    fake_pipeline.standalone_query = "laptop gaming rẻ hơn Acer Nitro V 15"
+    row = run_case(build_graph(), case)
+
+    assert row["checks"]["previous_product"] is True
+    assert row["checks"]["previous_price"] is False
+    assert row["followup_latency_s"] is not None
 
 
 def test_run_case_offline_followup_checks_the_reroute(fake_pipeline):

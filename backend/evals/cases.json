@@ -42,5 +42,12 @@
    "expect": {"intent": "shopping", "budget_vnd": 25000000, "tools": ["web_search"], "new_search_after_reject": true}},
   {"id": "reject-repick", "kind": "followup", "query": "laptop gaming dưới 25 triệu",
    "reject_with": "chọn máy rẻ nhất trong các máy vừa tìm được",
-   "expect": {"intent": "shopping", "budget_vnd": 25000000, "tools": ["web_search"], "new_search_after_reject": false}}
+   "expect": {"intent": "shopping", "budget_vnd": 25000000, "tools": ["web_search"], "new_search_after_reject": false}},
+
+  {"id": "then-cheaper", "kind": "multiturn", "query": "laptop gaming dưới 25 triệu",
+   "then": "còn máy nào rẻ hơn không?",
+   "expect": {"intent": "shopping", "budget_below_previous_price": true}},
+  {"id": "then-refers-to-product", "kind": "multiturn", "query": "laptop mỏng nhẹ cho sinh viên dưới 15 triệu",
+   "then": "RAM của máy đó có nâng cấp được không?",
+   "expect": {"intent": "shopping", "mentions_previous_product": true}}
 ]

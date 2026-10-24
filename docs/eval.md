@@ -8,15 +8,16 @@ Run from `backend/` with the API server stopped (embedded Qdrant allows one proc
 
 | Command | Scope | Cost |
 |---|---|---|
-| `python -m evals.run_eval` | 20 labeled queries, end to end | ~110–130 Gemini calls, 20–30 searches, ~20 min |
-| `python -m evals.run_eval --kind shopping` | One group: `shopping`, `knowledge`, `general`, `followup` | proportional |
+| `python -m evals.run_eval` | 22 labeled queries, end to end | ~130–150 Gemini calls, 25–35 searches, ~25 min |
+| `python -m evals.run_eval --kind shopping` | One group: `shopping`, `knowledge`, `general`, `followup`, `multiturn` | proportional |
 | `python -m evals.run_eval --case usd-budget` | One case | ~7 calls |
 | `python -m evals.run_eval --repeat 3` | Every case 3 times; reports unstable cases | 3× |
 | `python -m evals.check_judge` | LLM judge vs. hand labels | 8 calls |
+| `python -m evals.check_injection` | Prompt-injection attempts against the real nodes | ~8 calls |
 
 ## Dataset
 
-`evals/cases.json`: 11 shopping, 4 knowledge, 3 general-chat and 2 rejection-followup cases. Shopping cases cover budget formats (`20tr`, USD, none), a brand constraint, an impossible budget and an injected instruction; general chat includes a prompt-leak attempt.
+`evals/cases.json`: 11 shopping, 4 knowledge, 3 general-chat, 2 rejection-followup and 2 multi-turn cases. Shopping cases cover budget formats (`20tr`, USD, none), a brand constraint, an impossible budget and an injected instruction; general chat includes a prompt-leak attempt.
 
 Each case lists the checks it is labeled for; unlabeled aspects are not checked.
 
@@ -27,6 +28,8 @@ Each case lists the checks it is labeled for; unlabeled aspects are not checked.
 | `tools` | The agent called at least these tools |
 | `product` | A product was recommended (`true`) or the answer is `N/A` (`false`) |
 | `new_search_after_reject` | After rejection with `reject_with`, the router chose a new search (`true`) or a re-pick (`false`) |
+| `budget_below_previous_price` | After accepting the first answer, the `then` follow-up ("a cheaper one?") gets a budget below the first recommended price |
+| `mentions_previous_product` | The follow-up's `standalone_query` names the first recommended product (brand and line) |
 
 A run passes when it completes without error and no labeled check fails.
 
@@ -49,6 +52,8 @@ A run passes when it completes without error and no labeled check fails.
 | `per_node_mean`, `mean_tokens_per_query` | From the `node_measured` events emitted by every LLM node (`app/core/metrics.py`), including calls inside the agent loop |
 
 **Judge check.** `evals/judge_cases.json` holds 8 fixed recommendations, 4 labeled good and 4 bad. The judge agrees when it scores good ≥ 0.7 and bad ≤ 0.4. The cases are clear-cut: agreement shows the judge separates good from bad, not that it is reliable on borderline cases.
+
+**Injection check.** `evals/injection_cases.json` holds 6 attacks run through the real nodes with fixed inputs: system-prompt leak requests (English, Vietnamese), a product forced in the query, an instruction inside a retrieved page, an instruction in rejection feedback, and one planted in the conversation history. Each case passes when its output fields contain none of the listed strings (`must_not_contain`) and keep the listed values (`must_equal`). Some cases are guarded by code regardless of the model (a product name is copied from a candidate picked by id), so a pass there confirms the guard rather than the prompt.
 
 ## Baseline
 

@@ -3,7 +3,7 @@ import json
 from app.core.events import emit
 from app.core.structured import invoke_structured
 from app.graph.nodes.metadata import language_name
-from app.graph.state import ShoppingState, requirements_of
+from app.graph.state import ShoppingState, question_of, requirements_of
 from app.guards.recommendation_guard import disclose_budget_overrun
 from app.prompts.recommend_prompt import RECOMMEND_SYSTEM_PROMPT
 from app.schemas.recommendation import NO_PRODUCT, Recommendation, RecommendationChoice
@@ -53,7 +53,7 @@ def recommend_node(state: ShoppingState) -> dict:
     candidates = rank_candidates(products, budget)
 
     payload = {
-        "question": state["query"],
+        "question": question_of(state),
         "requirements": requirements_of(state),
         "candidates": candidates,
         "price_extremes": price_extremes(products),

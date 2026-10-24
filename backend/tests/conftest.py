@@ -54,6 +54,8 @@ class FakePipeline:
     price_lookup_results: list[dict] = field(default_factory=list)
     # Overrides what extraction returns; None uses _extracted_products()
     extracted: list[Product] | None = None
+    # What understand rewrites the message to; None leaves the message as it is
+    standalone_query: str | None = None
 
     def structured(self, schema, messages, check=None, max_retries=2, thinking_level=None):
         self.calls.append(schema.__name__)
@@ -66,6 +68,7 @@ class FakePipeline:
         if schema is QueryUnderstanding:
             result = QueryUnderstanding(
                 is_shopping_related=self.is_shopping,
+                standalone_query=self.standalone_query,
                 reply=None if self.is_shopping else "Xin chào!",
                 budget=25_000_000 if self.is_shopping else None,
                 purpose=["gaming"] if self.is_shopping else [],

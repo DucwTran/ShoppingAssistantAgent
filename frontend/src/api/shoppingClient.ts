@@ -96,8 +96,12 @@ async function postStream(
   throw new ApiError(0, "stream_incomplete", "The connection closed before a result arrived.")
 }
 
-export function streamQuery(query: string, onProgress: (event: ProgressEvent) => void): Promise<ShoppingResponse> {
-  const body: QueryRequest = { query }
+export function streamQuery(
+  query: string,
+  threadId: string | null,
+  onProgress: (event: ProgressEvent) => void,
+): Promise<ShoppingResponse> {
+  const body: QueryRequest = { query, thread_id: threadId }
   return postStream("/api/v1/shopping/query/stream", body, onProgress)
 }
 

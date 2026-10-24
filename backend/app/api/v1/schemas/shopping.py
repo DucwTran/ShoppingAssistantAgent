@@ -9,6 +9,8 @@ ConversationStatus = Literal["pending_approval", "done", "rejected"]
 
 class QueryRequest(BaseModel):
     query: str
+    # Set to ask a follow-up in a finished conversation; omitted, a new conversation starts
+    thread_id: str | None = None
 
 
 class ResumeRequest(BaseModel):

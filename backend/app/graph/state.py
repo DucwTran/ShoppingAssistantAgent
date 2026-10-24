@@ -7,6 +7,10 @@ class ShoppingState(TypedDict, total=False):
     # User input
     query: str
 
+    # Conversation memory - the only fields that outlive a turn
+    history: list[dict]  # earlier turns, oldest first: {"question", "answer"}
+    standalone_query: str | None  # query rewritten by understand_node to make sense without the history
+
     # Request metadata
     language: str
 
@@ -40,6 +44,11 @@ class ShoppingState(TypedDict, total=False):
 
     # Final result
     recommendation: dict
+
+
+def question_of(state: ShoppingState) -> str:
+    """The current question as the pipeline should read it: self-contained, with follow-up references resolved."""
+    return state.get("standalone_query") or state["query"]
 
 
 def requirements_of(state: ShoppingState) -> dict:

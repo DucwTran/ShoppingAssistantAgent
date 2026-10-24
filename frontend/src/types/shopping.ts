@@ -27,6 +27,8 @@ export interface ShoppingResponse {
 
 export interface QueryRequest {
   query: string
+  /** A finished conversation to continue with a follow-up question; omitted, a new one starts. */
+  thread_id?: string | null
 }
 
 export interface ResumeRequest {

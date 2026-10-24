@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.events import emit
 from app.core.llm import chat_model, key_rotation_middleware
 from app.graph.nodes.metadata import language_name
-from app.graph.state import ShoppingState, requirements_of
+from app.graph.state import ShoppingState, question_of, requirements_of
 from app.prompts.research_agent_prompt import RESEARCH_AGENT_SYSTEM_PROMPT
 from app.tools.agent_tools import RESEARCH_TOOLS, search_knowledge_base, web_search
 
@@ -36,7 +36,7 @@ def _research_agent():
 
 def _instruction(state: ShoppingState) -> str:
     payload = {
-        "question": state["query"],
+        "question": question_of(state),
         "language": language_name(state.get("language")),
         "requirements": requirements_of(state),
     }
@@ -75,7 +75,7 @@ def _collect_artifacts(messages: list) -> tuple[list[dict], list[dict]]:
 
 def _fallback_query(state: ShoppingState) -> str:
     """The rejection hint or the question, plus the budget in millions VND unless the text already states it."""
-    text = state.get("research_hint") or state["query"]
+    text = state.get("research_hint") or question_of(state)
     if state.get("budget"):
         millions = f"{state['budget'] / 1_000_000:.0f}"
         if not re.search(rf"(?<!\d){millions}(?!\d)", text):
@@ -87,7 +87,7 @@ def _fallback_research(state: ShoppingState) -> tuple[list[dict], list[dict]]:
     """Deterministic search used when the agent produced nothing (or failed): same tools, fixed queries."""
     emit("research_fallback", "Agent found nothing; running a direct search", node=_NODE, status="warning")
     _, web_results = web_search.func(query=_fallback_query(state), max_results=settings.web_search_max_results)
-    _, docs = search_knowledge_base.func(query=state["query"][:400])
+    _, docs = search_knowledge_base.func(query=question_of(state)[:400])
     return web_results, docs
 
 

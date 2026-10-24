@@ -4,6 +4,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import rate_limit
 from app.core import checkpointer
 from app.core.config import settings
 from app.core.llm import ApiKeysExhaustedError
@@ -15,6 +16,8 @@ QUERY = "laptop dưới 25 triệu cho lập trình AI và gaming"
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(checkpointer, "CHECKPOINT_DB", tmp_path / "checkpoints.sqlite")
+    # Each test starts with an empty request count; all tests share one client address
+    monkeypatch.setattr(rate_limit, "_limiter", rate_limit.SlidingWindowLimiter())
     with TestClient(app) as test_client:
         yield test_client
 
@@ -58,6 +61,59 @@ def test_query_then_approve_flow(client, fake_pipeline):
     again = client.post(f"/api/v1/shopping/resume/{body['thread_id']}", json={"approved": True})
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "thread_already_finished"
+
+
+def test_follow_up_question_continues_a_finished_conversation(client, fake_pipeline):
+    thread_id = client.post("/api/v1/shopping/query", json={"query": QUERY}).json()["thread_id"]
+
+    busy = client.post("/api/v1/shopping/query", json={"query": "rẻ hơn?", "thread_id": thread_id})
+    assert busy.status_code == 409
+    assert busy.json()["error"]["code"] == "conversation_busy"
+
+    client.post(f"/api/v1/shopping/resume/{thread_id}", json={"approved": True})
+    follow_up = client.post("/api/v1/shopping/query", json={"query": "rẻ hơn?", "thread_id": thread_id}).json()
+    assert follow_up["thread_id"] == thread_id
+    assert follow_up["status"] == "pending_approval"
+
+
+def test_follow_up_on_unknown_thread_returns_404(client):
+    response = client.post("/api/v1/shopping/query/stream", json={"query": QUERY, "thread_id": str(uuid.uuid4())})
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "thread_not_found"
+
+
+def test_requests_over_the_rate_limit_get_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 2)
+    for _ in range(2):
+        assert client.post("/api/v1/shopping/query", json={"query": "   "}).status_code == 400
+    response = client.post("/api/v1/shopping/query", json={"query": "   "})
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert 0 < int(response.headers["Retry-After"]) <= 60
+
+
+def test_rate_limit_window_slides_and_is_per_client(monkeypatch):
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 2)
+    now = [0.0]
+    limiter = rate_limit.SlidingWindowLimiter(clock=lambda: now[0])
+
+    assert limiter.wait_seconds("a") is None
+    now[0] = 30.0
+    assert limiter.wait_seconds("a") is None
+    assert limiter.wait_seconds("a") == 30.0  # the first request leaves the window at t=60
+    assert limiter.wait_seconds("b") is None  # another client has its own count
+    now[0] = 60.0
+    assert limiter.wait_seconds("a") is None
+
+
+def test_resume_feedback_passes_the_input_guard(client, fake_pipeline):
+    thread_id = client.post("/api/v1/shopping/query", json={"query": QUERY}).json()["thread_id"]
+    too_long = client.post(f"/api/v1/shopping/resume/{thread_id}", json={"approved": False, "feedback": "x" * 501})
+    assert too_long.status_code == 400
+    assert too_long.json()["error"]["message"].startswith("Feedback")
+
+    blank = client.post(f"/api/v1/shopping/resume/{thread_id}", json={"approved": False, "feedback": "   "})
+    assert blank.status_code == 200 and blank.json()["status"] == "pending_approval"
 
 
 def test_general_chat_returns_reply(client, fake_pipeline):

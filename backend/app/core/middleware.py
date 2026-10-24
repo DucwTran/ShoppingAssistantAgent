@@ -36,7 +36,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             body = {"error": detail}
         else:
             body = {"error": {"code": "http_error", "message": str(detail)}}
-        return JSONResponse(status_code=exc.status_code, content=body)
+        return JSONResponse(status_code=exc.status_code, content=body, headers=getattr(exc, "headers", None))
 
     @app.exception_handler(Exception)
     async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

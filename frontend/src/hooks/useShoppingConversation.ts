@@ -12,7 +12,7 @@ export type ConversationPhase = "idle" | "loading" | "pending_approval"
 
 /** A request to the backend; the failed one is kept so the user can retry it. */
 type RetryableAction =
-  | { kind: "query"; text: string }
+  | { kind: "query"; text: string; threadId: string | null }
   | { kind: "resume"; threadId: string; approved: boolean; feedback: string | null }
   | { kind: "continue"; threadId: string }
 
@@ -29,6 +29,8 @@ function newId(): string {
 export function useShoppingConversation() {
   const [messages, setMessages] = useState<ChatTurn[]>([])
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  // The conversation the next question continues, so the backend can resolve follow-ups like "a cheaper one"
+  const [conversationThreadId, setConversationThreadId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [progress, setProgress] = useState<ProgressEvent[]>([])
   const [lastError, setLastError] = useState<LastError | null>(null)
@@ -52,6 +54,7 @@ export function useShoppingConversation() {
       data: response.data,
     })
     setActiveThreadId(response.status === "pending_approval" ? response.thread_id : null)
+    setConversationThreadId(response.thread_id)
   }
 
   function applyFailure(error: unknown, action: RetryableAction) {
@@ -68,15 +71,17 @@ export function useShoppingConversation() {
 
     appendTurn({ kind: "error", id: newId(), message: apiError.message })
     // Back to idle whatever failed, so the user is never left without a way forward: they can retry
-    // from the error banner or ask something new.
+    // from the error banner or ask something new. A failed turn cannot be followed up, so a new
+    // question starts a new conversation.
     setActiveThreadId(null)
+    setConversationThreadId(null)
     setLastError({ message: apiError.message, retry })
   }
 
   function request(action: RetryableAction): Promise<ShoppingResponse> {
     switch (action.kind) {
       case "query":
-        return streamQuery(action.text, appendProgress)
+        return streamQuery(action.text, action.threadId, appendProgress)
       case "resume":
         return streamResume(action.threadId, action.approved, action.feedback, appendProgress)
       case "continue":
@@ -97,7 +102,7 @@ export function useShoppingConversation() {
   function submitQuery(text: string) {
     if (phase !== "idle") return
     appendTurn({ kind: "user_query", id: newId(), text })
-    send({ kind: "query", text })
+    send({ kind: "query", text, threadId: conversationThreadId })
   }
 
   function resume(approved: boolean, feedback: string | null) {
@@ -127,6 +132,7 @@ export function useShoppingConversation() {
     if (phase === "loading") return
     setMessages([])
     setActiveThreadId(null)
+    setConversationThreadId(null)
     setProgress([])
     setLastError(null)
   }

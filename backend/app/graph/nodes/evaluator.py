@@ -2,7 +2,7 @@ import json
 
 from app.core.events import emit
 from app.core.structured import invoke_structured
-from app.graph.state import ShoppingState, requirements_of
+from app.graph.state import ShoppingState, question_of, requirements_of
 from app.prompts.evaluator_prompt import EVALUATOR_SYSTEM_PROMPT
 from app.schemas.evaluation import PurposeJudgement
 from app.schemas.recommendation import NO_PRODUCT
@@ -69,7 +69,7 @@ def deterministic_checks(state: ShoppingState) -> tuple[dict[str, float], list[s
 def judge_purpose(state: ShoppingState) -> PurposeJudgement:
     """LLM-as-judge for the one criterion code cannot check: does the answer serve the stated purpose."""
     payload = {
-        "question": state["query"],
+        "question": question_of(state),
         "requirements": requirements_of(state),
         "recommendation": state.get("recommendation"),
         "recommended_product_specs": _recommended_product(state),

@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Conversations idle for longer than this are deleted from the checkpoint database
     checkpoint_ttl_hours: float = 24.0
 
+    # Earlier turns of a conversation kept as context for follow-up questions
+    max_history_turns: int = 5
+
+    # Requests per client per minute on the endpoints that run the graph
+    rate_limit_per_minute: int = 10
+
     # Research
     research_tool_call_limit: int = 4
     max_products: int = 6

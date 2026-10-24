@@ -1,3 +1,5 @@
+import json
+
 from app.core.events import emit
 from app.core.structured import invoke_structured
 from app.graph.nodes.metadata import language_name
@@ -25,20 +27,28 @@ def _budget_in_vnd(understanding: QueryUnderstanding) -> float | None:
         return None
 
 
+def _human_message(state: ShoppingState) -> str:
+    history = state.get("history", [])
+    if not history:
+        return state["query"]
+    return json.dumps({"history": history, "message": state["query"]}, ensure_ascii=False)
+
+
 def understand_node(state: ShoppingState) -> dict:
     language = state.get("language")
     understanding = invoke_structured(
         QueryUnderstanding,
         [
             ("system", UNDERSTAND_SYSTEM_PROMPT.format(language=language_name(language))),
-            ("human", state["query"]),
+            ("human", _human_message(state)),
         ],
     )
+    standalone_query = (understanding.standalone_query or "").strip()[:500] or state["query"]
 
     if not understanding.is_shopping_related:
         reply = understanding.reply or _FALLBACK_GENERAL_REPLY.get(language, _FALLBACK_GENERAL_REPLY["vi"])
         emit("intent_classified", "Query is general chat", node="understand", intent="general")
-        return {"intent": "general", "general_reply": reply}
+        return {"intent": "general", "general_reply": reply, "standalone_query": standalone_query}
 
     budget = _budget_in_vnd(understanding)
     emit(
@@ -48,9 +58,11 @@ def understand_node(state: ShoppingState) -> dict:
         intent="shopping",
         budget=budget,
         purpose=understanding.purpose,
+        standalone_query=standalone_query,
     )
     return {
         "intent": "shopping",
+        "standalone_query": standalone_query,
         "general_reply": None,
         "budget": budget,
         "purpose": understanding.purpose,
