@@ -40,8 +40,6 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-001"
     llm_timeout_seconds: float = 60.0
 
-    quality_threshold: float = 0.70
-
     # Human-in-the-loop rejection loop bound (safety valve, not a normal stopping point)
     max_human_rejections: int = 10
 

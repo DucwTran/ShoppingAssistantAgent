@@ -15,22 +15,9 @@ export function PendingApprovalMessage({ data, onApprove, onReject, busy }: Pend
 
   if (!data.recommendation) return null
 
-  const isLowQuality = data.quality_score !== null && data.quality_score < data.quality_threshold
-
   return (
     <div className="max-w-[80%] space-y-3">
       <RecommendationCard recommendation={data.recommendation} />
-
-      <div
-        className={
-          isLowQuality
-            ? "rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
-            : "rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-        }
-      >
-        {data.quality_score !== null && <p>Quality score: {Math.round(data.quality_score * 100)}%</p>}
-        {isLowQuality && data.evaluation_feedback && <p className="mt-1">{data.evaluation_feedback}</p>}
-      </div>
 
       {!showFeedbackInput ? (
         <div className="flex gap-2">

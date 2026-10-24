@@ -17,10 +17,10 @@ def _thread_config():
 # --- routing --------------------------------------------------------------------------------------
 
 
-def test_build_graph_includes_all_nodes():
-    node_names = set(build_graph().get_graph().nodes)
-    assert {"understand", "research_agent", "extract_products", "recommend", "evaluator",
-            "request_approval", "human_approval", "feedback_router", "record_turn"} <= node_names
+def test_build_graph_has_exactly_the_pipeline_nodes():
+    node_names = set(build_graph().get_graph().nodes) - {"__start__", "__end__"}
+    assert node_names == {"input_validation", "understand", "research_agent", "extract_products", "recommend",
+                          "human_approval", "feedback_router", "record_turn"}
 
 
 def test_route_after_understand():
@@ -52,15 +52,15 @@ def _events(graph, graph_input, config) -> list[str]:
     return [event["event"] for event in graph.stream(graph_input, config, stream_mode="custom")]
 
 
-def test_approval_events_are_emitted_once_across_pause_and_resume(fake_pipeline):
+def test_no_event_repeats_across_pause_and_resume(fake_pipeline):
     # Resuming re-runs the interrupted node from its first line, so anything placed before
     # interrupt() would run - and emit - a second time.
     graph, config = build_graph(), _thread_config()
-    events = _events(graph, {"query": "laptop gaming dưới 25 triệu"}, config)
-    events += _events(graph, Command(resume={"approved": True, "feedback": None}), config)
+    paused = _events(graph, {"query": "laptop gaming dưới 25 triệu"}, config)
+    resumed = _events(graph, Command(resume={"approved": True, "feedback": None}), config)
 
-    assert events.count("hitl_required") == 1
-    assert events.count("hitl_resolved") == 1
+    assert resumed.count("hitl_resolved") == 1
+    assert not set(paused) & set(resumed) - {"node_measured"}
 
 
 def test_offline_flow_grounds_products_and_pauses_for_approval(fake_pipeline):
@@ -76,7 +76,7 @@ def test_offline_flow_grounds_products_and_pauses_for_approval(fake_pipeline):
     recommendation = result["__interrupt__"][0].value["recommendation"]
     assert recommendation["product_name"] == "Acer Nitro V 15"
     assert recommendation["url"] == "https://fptshop.com.vn/acer-nitro-v"
-    assert 0.0 <= result["__interrupt__"][0].value["quality_score"] <= 1.0
+    assert state["language"] == "vi"
 
 
 def test_offline_general_chat_ends_without_research(fake_pipeline):

@@ -6,6 +6,9 @@ from pydantic import BaseModel, BeforeValidator, Field
 # "24.990.000", "24,990,000" - thousands-grouped integer, as Vietnamese retailers write prices
 _GROUPED_INT = re.compile(r"^\d{1,3}([.,]\d{3})+$")
 
+# The spec fields of Product: grounded against the source page, scored for completeness
+SPEC_FIELDS = ("cpu", "gpu", "ram", "storage")
+
 
 def _price_or_none(value):
     """Accept a number or a price string; anything unparsable ("unknown", "Liên hệ", "") means no price."""

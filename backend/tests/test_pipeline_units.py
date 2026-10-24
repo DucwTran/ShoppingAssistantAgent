@@ -1,7 +1,6 @@
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 
-from app.graph.nodes.evaluator import deterministic_checks
 from app.graph.nodes.recommend import _check_choice, build_recommendation, rank_candidates
 from app.graph.nodes.research_agent import _collect_artifacts, _fallback_query
 from app.guards.grounding_guard import ground_products
@@ -106,62 +105,6 @@ def test_check_choice_rejects_unknown_ids():
     check(RecommendationChoice(product_id=1, why_it_fits=["x"], confidence=0.5))
     with pytest.raises(ValueError):
         check(RecommendationChoice(product_id=5, why_it_fits=["x"], confidence=0.5))
-
-
-# --- evaluator -------------------------------------------------------------------------------------
-
-
-def test_deterministic_checks_full_marks_for_grounded_in_budget_product():
-    state = {"budget": 25_000_000, "products": _PRODUCTS,
-             "recommendation": {"product_name": "B", "price": 20_000_000, "url": "https://b.vn/b"}}
-    scores, reasons = deterministic_checks(state)
-    assert scores == {"grounded": 1.0, "budget_fit": 1.0, "spec_completeness": 1.0}
-    assert reasons == []
-
-
-def test_deterministic_checks_flags_over_budget_and_ungrounded():
-    state = {"budget": 25_000_000, "products": _PRODUCTS,
-             "recommendation": {"product_name": "X", "price": 30_000_000, "url": "https://other"}}
-    scores, reasons = deterministic_checks(state)
-    assert scores["grounded"] == 0.0
-    assert scores["budget_fit"] == 0.0
-    assert any("exceeds budget" in r for r in reasons)
-
-
-def test_deterministic_checks_picks_the_named_product_when_a_page_lists_several():
-    page = "https://shop.vn/gaming"
-    products = [
-        {"name": "Cheap", "price": None, "cpu": "unknown", "gpu": "unknown", "ram": "unknown", "storage": "unknown",
-         "source_url": page},
-        {**_PRODUCTS[1], "source_url": page},
-    ]
-    state = {"budget": 25_000_000, "products": products,
-             "recommendation": {"product_name": "B", "price": 20_000_000, "url": page}}
-    scores, reasons = deterministic_checks(state)
-    assert scores["spec_completeness"] == 1.0
-    assert reasons == []
-
-
-def test_deterministic_checks_penalize_declining_when_in_budget_candidates_exist():
-    na = {"product_name": "N/A", "price": None, "url": None}
-    docs = [{"text": "x"}]
-
-    # B costs 20M, within the 25M budget: answering N/A ignores a usable candidate
-    scores, reasons = deterministic_checks({"recommendation": na, "products": _PRODUCTS, "budget": 25_000_000,
-                                            "retrieved_docs": docs})
-    assert scores["grounded"] == 0.0 and scores["budget_fit"] == 0.0
-    assert "1 in-budget candidates" in reasons[0]
-
-    # Every candidate is over a 10M budget: declining is the right answer
-    scores, reasons = deterministic_checks({"recommendation": na, "products": _PRODUCTS, "budget": 10_000_000,
-                                            "retrieved_docs": docs})
-    assert scores == {"grounded": 1.0, "budget_fit": 1.0, "spec_completeness": 1.0} and reasons == []
-
-
-def test_deterministic_checks_knowledge_answer_depends_on_docs():
-    na = {"product_name": "N/A", "price": None, "url": None}
-    assert deterministic_checks({"recommendation": na, "retrieved_docs": [{"text": "x"}]})[0]["grounded"] == 1.0
-    assert deterministic_checks({"recommendation": na, "retrieved_docs": []})[0]["grounded"] < 1.0
 
 
 # --- research --------------------------------------------------------------------------------------

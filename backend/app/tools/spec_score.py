@@ -1,4 +1,4 @@
-_SPEC_FIELDS = ("cpu", "gpu", "ram", "storage")
+from app.schemas.product import SPEC_FIELDS
 
 
 def score_product_spec(product: dict, budget: float | None = None) -> dict:
@@ -11,7 +11,7 @@ def score_product_spec(product: dict, budget: float | None = None) -> dict:
         score -= 0.4
         reasons.append(f"price {price} exceeds budget {budget}")
 
-    unknown_fields = [field for field in _SPEC_FIELDS if product.get(field, "unknown") == "unknown"]
+    unknown_fields = [field for field in SPEC_FIELDS if product.get(field, "unknown") == "unknown"]
     if unknown_fields:
         score -= 0.1 * len(unknown_fields)
         reasons.append(f"missing spec info: {', '.join(unknown_fields)}")

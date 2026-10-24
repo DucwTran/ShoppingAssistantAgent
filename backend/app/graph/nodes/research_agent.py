@@ -9,8 +9,8 @@ from langchain_core.messages import AIMessage, ToolMessage
 from app.core.config import settings
 from app.core.events import emit
 from app.core.llm import chat_model, key_rotation_middleware
-from app.graph.nodes.metadata import language_name
 from app.graph.state import ShoppingState, question_of, requirements_of
+from app.prompts.language import language_name
 from app.prompts.research_agent_prompt import RESEARCH_AGENT_SYSTEM_PROMPT
 from app.tools.agent_tools import RESEARCH_TOOLS, search_knowledge_base, web_search
 

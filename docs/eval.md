@@ -47,17 +47,18 @@ A run passes when it completes without error and no labeled check fails.
 | `price_filter.recovered_by_lookup` | Products extracted without a price that the second search found one for |
 | `price_filter.dropped_no_price` | Products removed because no price was found |
 | `price_filter.answers_emptied` | Researched queries that ended with no candidate only because every product lacked a price; their cost shows in `accuracy.product` |
+| `mean_purpose_fit` | The LLM judge's score (0–1) for how well the final answer serves the stated purpose (`evals/judge.py`); one extra call per researched case, made by the eval, not the pipeline |
 | `failed_attempts` | Node attempts that failed and were retried |
 | `latency_s` | p50 / p95 of the first turn of researched queries |
 | `per_node_mean`, `mean_tokens_per_query` | From the `node_measured` events emitted by every LLM node (`app/core/metrics.py`), including calls inside the agent loop |
 
-**Judge check.** `evals/judge_cases.json` holds 8 fixed recommendations, 4 labeled good and 4 bad. The judge agrees when it scores good ≥ 0.7 and bad ≤ 0.4. The cases are clear-cut: agreement shows the judge separates good from bad, not that it is reliable on borderline cases.
+**Judge check.** Before `mean_purpose_fit` is trusted, the judge is checked against people: `evals/judge_cases.json` holds 8 fixed recommendations, 4 labeled good and 4 bad. The judge agrees when it scores good ≥ 0.7 and bad ≤ 0.4. The cases are clear-cut: agreement shows the judge separates good from bad, not that it is reliable on borderline cases.
 
 **Injection check.** `evals/injection_cases.json` holds 6 attacks run through the real nodes with fixed inputs: system-prompt leak requests (English, Vietnamese), a product forced in the query, an instruction inside a retrieved page, an instruction in rejection feedback, and one planted in the conversation history. Each case passes when its output fields contain none of the listed strings (`must_not_contain`) and keep the listed values (`must_equal`). Some cases are guarded by code regardless of the model (a product name is copied from a candidate picked by id), so a pass there confirms the guard rather than the prompt.
 
 ## Baseline
 
-2026-10-23, `gemini-3.5-flash`. Report `eval-20261023-172209.json`.
+2026-10-23, `gemini-3.5-flash`. Report `eval-20261023-172209.json`. Recorded before the price filter, the leaner extraction and the removal of the in-graph `evaluator` node (whose ~13 s appears below); it has not been repeated since.
 
 | Metric | Result |
 |---|---|
@@ -89,8 +90,8 @@ A run passes when it completes without error and no labeled check fails.
 | Page price lines never reached extraction | They were appended after the ~2,000-character snippet; extraction reads 1,500 characters | Fixed (separate `price_listing` field, covered by a unit test); not yet re-measured live |
 | Few prices in search results | Most results are editorial listicles that write prices as "19,4 triệu", which the price-line pattern does not match; some retailer pages return a ~150-character snippet | Mitigated: a product without a price is searched once more by name and kept only if a price is found next to its model code. Not yet measured; expect `price_known` near 100% and more `N/A` answers |
 | `extract_products` output is mostly reasoning | On saved states, 2,698 of 3,275 output tokens were thoughts at the default thinking level; at `low`/`minimal` output was 600–1,100 tokens, with identical products in the one case where both completed | Changed to `thinking_level="low"`; inputs capped at 12 results, priced pages first. Latency effect not yet measured |
-| A missing price costs little in the quality score | It lowers the score by 0.14 (budget fit 0.5, spec completeness 4/5), so priceless recommendations still score ~0.86 | Superseded: products without a price are no longer recommended |
-| `N/A` answer scored 1.0 despite usable candidates | In a run cut short by exhausted quota, `ai-gaming-25m` had 6 priced candidates, `recommend` answered `N/A`, and the evaluator scored it 1.0: the `N/A` branch only checked for knowledge snippets | Fixed: `N/A` with in-budget candidates scores grounded and budget fit 0 (overall ≤ 0.55, below the 0.70 threshold). Why the model declined is unknown; eval rows now keep `why_it_fits`, `tradeoffs` and `candidates` |
+| A missing price cost little in the in-graph quality score | It lowers the score by 0.14 (budget fit 0.5, spec completeness 4/5), so priceless recommendations still score ~0.86 | Superseded: products without a price are no longer recommended |
+| `N/A` answer scored 1.0 despite usable candidates | In a run cut short by exhausted quota, `ai-gaming-25m` had 6 priced candidates, `recommend` answered `N/A`, and the evaluator scored it 1.0: the `N/A` branch only checked for knowledge snippets | Superseded: the in-graph score was removed. Such an answer now fails the case's `product` check in the eval; eval rows keep `why_it_fits`, `tradeoffs` and `candidates` to explain it |
 | Rejection with an unavailable requirement ("AMD Radeon") | Re-search ran as labeled, but results contained no AMD GPU laptop. One run picked integrated graphics (purpose fit 0.2); a re-run stated the gap in the trade-offs | Data limitation |
 | Injected instruction in the query | Errored in the baseline; on re-run the recommendation stayed in budget and ignored the instruction | Passed on re-run |
 

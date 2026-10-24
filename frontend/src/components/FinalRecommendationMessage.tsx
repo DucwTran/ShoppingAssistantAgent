@@ -17,9 +17,6 @@ export function FinalRecommendationMessage({ data, rejected }: FinalRecommendati
       <div className={rejected ? "opacity-60" : undefined}>
         <RecommendationCard recommendation={data.recommendation} />
       </div>
-      {data.quality_score !== null && (
-        <p className="text-sm text-gray-500">Quality score: {Math.round(data.quality_score * 100)}%</p>
-      )}
     </div>
   )
 }

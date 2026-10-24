@@ -33,10 +33,6 @@ class ShoppingState(TypedDict, total=False):
     # Product processing - each product grounded to a web_results url
     products: list[dict]
 
-    # Evaluation
-    quality_score: float
-    evaluation_feedback: str
-
     # Human-in-the-loop
     human_approval: bool | None
     human_feedback: list[str]  # reason given with each rejection, oldest first

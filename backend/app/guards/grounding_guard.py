@@ -1,7 +1,8 @@
 import math
 import re
 
-_SPEC_FIELDS = ("cpu", "gpu", "ram", "storage")
+from app.schemas.product import SPEC_FIELDS
+
 _NUMBER = re.compile(r"\d[\d.,]*\d|\d")
 _MILLIONS = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:triệu|tr\b)", re.IGNORECASE)
 
@@ -37,7 +38,7 @@ def _verify_facts(product: dict, source_text: str) -> int:
         cleared += 1
 
     source_numbers = set(re.findall(r"\d+", source_text))
-    for field in _SPEC_FIELDS:
+    for field in SPEC_FIELDS:
         value = product.get(field, "unknown")
         if value != "unknown" and not set(re.findall(r"\d+", value)) <= source_numbers:
             product[field] = "unknown"

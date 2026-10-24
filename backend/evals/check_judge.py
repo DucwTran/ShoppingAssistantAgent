@@ -1,4 +1,4 @@
-"""Check the evaluator's LLM judge (purpose_fit) against hand-labeled recommendations.
+"""Check the LLM judge (purpose_fit, evals/judge.py) against hand-labeled recommendations.
 
 Usage (from backend/):  python -m evals.check_judge
 
@@ -11,7 +11,7 @@ One Gemini call per case.
 import json
 from pathlib import Path
 
-from app.graph.nodes.evaluator import judge_purpose
+from evals.judge import judge_purpose
 from evals.run_eval import save_results
 
 _CASES = Path(__file__).parent / "judge_cases.json"

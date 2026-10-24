@@ -24,6 +24,7 @@ from langgraph.types import Command
 from app.core.config import settings
 from app.graph.graph import build_graph
 from app.schemas.recommendation import NO_PRODUCT
+from evals.judge import judge_purpose
 
 _HERE = Path(__file__).parent
 _BUDGET_WORDS = ("budget", "ngân sách")
@@ -68,7 +69,17 @@ def run_case(graph, case: dict) -> dict:
             then_events, followup["latency_s"], error = _stream(graph, {"query": case["then"]}, config)
             events += then_events
 
-    return score_case(case, graph.get_state(config).values, events, latency, error, followup)
+    state = graph.get_state(config).values
+    judgement = _judge(state) if error is None and state.get("intent") == "shopping" else None
+    return score_case(case, state, events, latency, error, followup, judgement)
+
+
+def _judge(state: dict) -> dict | None:
+    """The LLM judge's view of the final answer; None if the judge call itself fails, which is not the case's fault."""
+    try:
+        return judge_purpose(state).model_dump()
+    except Exception:  # noqa: BLE001 - a judge outage leaves purpose_fit unknown for this case
+        return None
 
 
 # --- scoring (pure, unit-tested offline) ----------------------------------------------------------
@@ -150,11 +161,10 @@ def _answer_quality(state: dict) -> dict[str, bool | None]:
 
 
 def score_case(case: dict, state: dict, events: list[dict], latency_s: float, error: str | None,
-               followup: dict | None = None) -> dict:
+               followup: dict | None = None, judgement: dict | None = None) -> dict:
     tools_called = {e["tool"] for e in events if e["event"] == "tool_called"}
     checks = _checks(case.get("expect", {}), state, tools_called, followup)
     nodes = _node_usage(events)
-    purpose_fit = next((e["purpose_fit"] for e in reversed(events) if e["event"] == "evaluator_done"), None)
     recommendation = state.get("recommendation") or {}
 
     return {
@@ -177,9 +187,8 @@ def score_case(case: dict, state: dict, events: list[dict], latency_s: float, er
         # The model's own reasoning, so a surprising answer (e.g. N/A despite candidates) can be explained
         "why_it_fits": recommendation.get("why_it_fits"),
         "tradeoffs": recommendation.get("tradeoffs"),
-        "quality_score": state.get("quality_score"),
-        "purpose_fit": purpose_fit,
-        "evaluation_feedback": state.get("evaluation_feedback"),
+        "purpose_fit": judgement["purpose_fit"] if judgement else None,
+        "judge_feedback": judgement["feedback"] if judgement else None,
         "latency_s": latency_s,
         "followup_latency_s": followup["latency_s"] if followup else None,
         "tokens": sum(n["input_tokens"] + n["output_tokens"] for n in nodes.values()),
@@ -239,7 +248,6 @@ def summarize(rows: list[dict]) -> dict:
             "price_known": _rate(r["price_known"] for r in completed),
             "budget_honest": _rate(r["budget_honest"] for r in completed),
             "fallback_used": _rate(r["fallback_used"] for r in researched),
-            "mean_quality_score": _mean(r["quality_score"] for r in researched),
             "mean_purpose_fit": _mean(r["purpose_fit"] for r in researched),
         },
         "price_filter": {

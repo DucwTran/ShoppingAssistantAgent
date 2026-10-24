@@ -20,9 +20,6 @@ class ResumeRequest(BaseModel):
 
 class ShoppingResultData(BaseModel):
     recommendation: dict | None
-    quality_score: float | None
-    quality_threshold: float
-    evaluation_feedback: str | None
     general_reply: str | None = None
 
 

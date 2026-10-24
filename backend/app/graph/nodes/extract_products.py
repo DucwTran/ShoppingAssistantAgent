@@ -9,6 +9,7 @@ from app.prompts.extract_products_prompt import EXTRACT_PRODUCTS_SYSTEM_PROMPT
 from app.schemas.research import ProductExtraction
 from app.tools.currency import UnsupportedCurrencyError, convert_currency
 from app.tools.price_lookup import fill_missing_prices
+from app.tools.web_search import page_text
 
 _CONTENT_CHARS = 1500
 # Results sent to the model; research can return 20+ after a follow-up search, and every one costs input tokens
@@ -61,7 +62,7 @@ def extract_products_node(state: ShoppingState) -> dict:
 
     products, dropped, cleared = ground_products(
         [p.model_dump() for p in extraction.products],
-        sources={r["url"]: f"{r['title']}\n{r.get('content') or ''}\n{r.get('price_listing') or ''}" for r in results},
+        sources={r["url"]: page_text(r) for r in results},
     )
     products = [to_vnd(p) for p in products[: settings.max_products]]
 

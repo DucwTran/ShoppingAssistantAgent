@@ -177,15 +177,15 @@ def test_stream_reports_provider_outage_in_band(client, fake_pipeline):
 
 
 def test_retry_continues_a_failed_query_from_the_failed_step(client, fake_pipeline):
-    fake_pipeline.failures["PurposeJudgement"] = ApiKeysExhaustedError("all keys failed")  # the last LLM step
+    fake_pipeline.failures["RecommendationChoice"] = ApiKeysExhaustedError("all keys failed")  # the last LLM step
     _, error = _sse_frames(client.post("/api/v1/shopping/query/stream", json={"query": QUERY}).text)[-1]
 
     frames = _sse_frames(client.post(f"/api/v1/shopping/retry/{error['thread_id']}/stream").text)
     assert frames[-1][0] == "result"
     assert frames[-1][1]["status"] == "pending_approval"
     # Only the failed step ran again; the earlier steps were not repeated.
-    assert fake_pipeline.calls.count("RecommendationChoice") == 1
-    assert fake_pipeline.calls.count("PurposeJudgement") == 2
+    assert fake_pipeline.calls.count("ProductExtraction") == 1
+    assert fake_pipeline.calls.count("RecommendationChoice") == 2
 
 
 def test_retry_continues_a_failed_refinement(client, fake_pipeline):

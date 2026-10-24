@@ -1,7 +1,7 @@
 import pytest
 
 from app.core import structured
-from app.schemas.evaluation import PurposeJudgement
+from evals.judge import PurposeJudgement
 
 
 def _use(monkeypatch, *outcomes) -> list:

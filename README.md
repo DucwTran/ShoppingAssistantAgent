@@ -18,11 +18,10 @@ FastAPI serves a LangGraph state graph; a React app consumes its SSE endpoints.
 
 ```mermaid
 flowchart TD
-    START([START]) --> IV[input_validation] --> MD[metadata] --> UN[understand]
+    START([START]) --> IV[input_validation] --> UN[understand]
     UN -->|small talk| RT[record_turn]
     UN -->|shopping| RA[research_agent]
-    RA --> EP[extract_products] --> REC[recommend] --> EV[evaluator]
-    EV --> RQ[request_approval] --> HA{{human_approval}}
+    RA --> EP[extract_products] --> REC[recommend] --> HA{{human_approval}}
     HA -->|accepted / rejection limit| RT
     HA -->|rejected| FR[feedback_router]
     FR -->|new search| RA
@@ -32,14 +31,11 @@ flowchart TD
 
 | Node | LLM | Purpose |
 |---|---|---|
-| `input_validation` | – | Normalize Unicode, strip control characters, enforce 1–500 characters; reset the per-turn state of a follow-up |
-| `metadata` | – | Detect Vietnamese or English |
+| `input_validation` | – | Normalize Unicode, strip control characters, enforce 1–500 characters; detect Vietnamese or English; reset the per-turn state of a follow-up |
 | `understand` | 1 call | Classify shopping vs. small talk; rewrite a follow-up as a standalone question using the history; extract budget (VND), purpose, preferences, constraints |
 | `research_agent` | agent | Choose between web search and the knowledge base, up to 4 tool calls; falls back to a fixed search on failure |
 | `extract_products` | 1 call | Turn search results into products; drop ungrounded ones, clear unverified prices/specs, convert to VND; search once more for missing prices and drop products still without one |
 | `recommend` | 1 call | Code ranks candidates, the model picks one by id; name, price and link are copied from the source data |
-| `evaluator` | 1 call | Score 0–1: grounding, budget and spec completeness checked in code, purpose fit judged by the model |
-| `request_approval` | – | Announce the pause (separate node so it does not repeat on resume) |
 | `human_approval` | – | `interrupt()` and record the user's decision |
 | `feedback_router` | 1 call | Decide whether rejection feedback needs new products or a re-pick |
 | `record_turn` | – | Append the finished turn to the conversation history (last 5 kept) |
@@ -114,8 +110,9 @@ backend/
     tools/      agent tools, Tavily client, currency/price/spec helpers
     rag/        loading, chunking, embeddings, Qdrant index
     guards/     input, tool results, grounding, budget disclosure
-    core/       config, Gemini client + key rotation, errors, checkpointer, logging
-    api/        HTTP endpoints and schemas
+    core/       config, Gemini client + key rotation, errors, checkpointer, logging, metrics
+    api/        HTTP endpoints and schemas, middleware, health checks, rate limit
+    prompts/    one system prompt per LLM node, language names
   data/knowledge/   RAG source documents
   evals/        evaluation script and query set
   tests/
@@ -130,6 +127,7 @@ compose.yaml    the two containers and the data volume
 - **One agent.** Only research needs decisions that depend on intermediate results (what to search, where, whether to search again). Every other step is a single structured-output call or plain code.
 - **Data bypasses model prose.** Tools return `content_and_artifact`: the agent reads a trimmed summary, while full results go into graph state from `ToolMessage.artifact`.
 - **Failure handling by layer.** Invalid structured output is regenerated; a key that hits its quota is rotated out; provider 5xx/timeouts are retried by `RetryPolicy`; an agent failure falls back to a fixed search; anything left is returned as a user-facing error with a retry that resumes from the checkpoint.
+- **The judge runs offline.** The person approving a recommendation is its runtime judge; the LLM judge of purpose fit runs in the eval (`evals/judge.py`), checked against hand labels, so it costs nothing per query.
 - **Measured nodes.** Every LLM node reports its duration and token usage (including the agent's inner calls) as a `node_measured` event, logged by the server and aggregated by the eval.
 - **Memory as state.** A follow-up runs the graph again on the same thread: the checkpointer keeps a short `history`, every other field is reset per turn, and `understand` turns the message into a standalone question that the rest of the pipeline reads.
 - **Injection defense in code.** Prompts tell the model to treat web results and history as data, but the guarantees come from code: products must be grounded in a retrieved page, the model picks a candidate by id, searches go to retailer domains first, and the agent is limited to 4 tool calls. `evals/check_injection.py` measures what the prompts add.
@@ -137,7 +135,7 @@ compose.yaml    the two containers and the data volume
 
 ## Limitations
 
-- A shopping query takes 60 s at the median and 83 s at p95, about 23k tokens ([eval baseline](docs/eval.md#baseline)).
+- A shopping query took 60 s at the median and 83 s at p95, about 23k tokens, in the [eval baseline](docs/eval.md#baseline); that run still included a quality-scoring LLM call (~13 s) since removed, and has not been repeated.
 - Gemini 503 overload errors that outlast the node retries still reach the user (3 of 20 eval cases).
 - Memory is the last 5 turns of one conversation; "New chat", a reload or a failed turn starts a new one.
 - Laptops only; USD is converted to VND at a fixed rate.

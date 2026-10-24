@@ -1,10 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.evaluation import PurposeJudgement
 from app.schemas.product import Product
 from app.schemas.recommendation import Recommendation, RecommendationChoice
 from app.schemas.understanding import QueryUnderstanding
+from evals.judge import PurposeJudgement
 
 
 def test_query_understanding_general_chat():

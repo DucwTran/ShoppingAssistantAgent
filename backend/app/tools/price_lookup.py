@@ -2,7 +2,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 from app.core.logging import log_event
-from app.tools.web_search import PRICE_PATTERN, search_web
+from app.tools.web_search import PRICE_PATTERN, page_text, search_web
 
 _RESULTS_PER_LOOKUP = 3
 # How far after the model code a price may appear and still belong to it (one listing line or card)
@@ -43,8 +43,7 @@ def _lookup(product: dict) -> tuple[float, str] | None:
                   product=product["name"], error=repr(exc))
         return None
     for result in results:
-        text = f"{result.get('title', '')}\n{result.get('content') or ''}\n{result.get('price_listing') or ''}"
-        price = price_near_code(codes[0], text)
+        price = price_near_code(codes[0], page_text(result))
         if price:
             return price, result["url"]
     return None

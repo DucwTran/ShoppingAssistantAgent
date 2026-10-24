@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.api.health import router as health_router
+from app.api.middleware import add_cors, add_request_context, register_exception_handlers
 from app.api.v1.routers.shopping import router as shopping_router
 from app.core.checkpointer import open_checkpointer, prune_checkpoints
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.middleware import add_cors, add_request_context, register_exception_handlers
 from app.graph.graph import build_graph
 
 _PRUNE_INTERVAL_SECONDS = 3600

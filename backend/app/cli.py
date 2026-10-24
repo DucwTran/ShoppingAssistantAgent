@@ -4,7 +4,6 @@ import uuid
 
 from langgraph.types import Command
 
-from app.core.config import settings
 from app.core.errors import to_app_error
 from app.graph.graph import build_graph
 from app.guards.input_guard import InvalidQueryError
@@ -48,8 +47,6 @@ def main() -> None:
         payload = result["__interrupt__"][0].value
         print("\nRecommendation pending approval:")
         print(json.dumps(payload.get("recommendation", {}), ensure_ascii=False, indent=2))
-        if payload.get("quality_score") is not None:
-            print(f"Quality score: {payload['quality_score']:.2f} (threshold {settings.quality_threshold:.2f})")
         result = _invoke(graph, _prompt_for_approval(), config)
 
     if result.get("general_reply"):
@@ -60,14 +57,6 @@ def main() -> None:
         print("\nRejection limit reached - the last recommendation below was NOT approved.")
     print("\nFinal recommendation:")
     print(json.dumps(result.get("recommendation", {}), ensure_ascii=False, indent=2))
-
-    quality_score = result.get("quality_score")
-
-    if quality_score is not None:
-        print(f"\nQuality score: {quality_score:.2f} (threshold {settings.quality_threshold:.2f})")
-        if quality_score < settings.quality_threshold:
-            print("Note: quality bar not met - treat as unverified:")
-            print(f"  - {result.get('evaluation_feedback', '')}")
 
 
 if __name__ == "__main__":

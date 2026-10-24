@@ -7,14 +7,15 @@ import pytest
 from langchain_core.messages import ToolMessage
 
 from app.core.config import settings
-from app.graph.nodes import evaluator, extract_products, feedback_router, recommend, research_agent, understand
-from app.schemas.evaluation import PurposeJudgement
+from app.graph.nodes import extract_products, feedback_router, recommend, research_agent, understand
 from app.schemas.feedback import FeedbackDecision
 from app.schemas.product import Product
 from app.schemas.recommendation import RecommendationChoice
 from app.schemas.research import ProductExtraction
 from app.schemas.understanding import QueryUnderstanding
 from app.tools import price_lookup
+from evals import judge
+from evals.judge import PurposeJudgement
 
 WEB_RESULTS = [
     {"title": "Laptop Acer Nitro V 15 RTX 4050", "url": "https://fptshop.com.vn/acer-nitro-v",
@@ -114,7 +115,8 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def fake_pipeline(monkeypatch) -> FakePipeline:
     fake = FakePipeline()
-    for module in (understand, extract_products, recommend, evaluator, feedback_router):
+    # judge: the eval harness calls it on finished runs, so offline eval tests must not reach the API either
+    for module in (understand, extract_products, recommend, feedback_router, judge):
         monkeypatch.setattr(module, "invoke_structured", fake.structured)
     monkeypatch.setattr(research_agent, "_run_agent", fake.run_agent)
     monkeypatch.setattr(price_lookup, "search_web", lambda query, max_results: fake.price_lookup_results)

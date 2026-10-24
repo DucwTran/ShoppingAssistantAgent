@@ -16,7 +16,7 @@ npm run lint      # oxlint
 ## Behavior
 
 - Shows each pipeline step and the agent's search queries while a request runs.
-- Renders the recommendation with price, link, reasons, trade-offs, alternative and quality score; a score below the threshold is highlighted with the evaluator's concern.
+- Renders the recommendation with price, link, reasons, trade-offs, alternative and the model's confidence.
 - Accept or reject with feedback; a rejection continues the same conversation.
 - On failure, shows a plain-language message. For network or server-side failures it offers **Try again**, which resumes a server-side failure from the failed step and resends a request that never reached the server. The input stays usable after any error.
 - A question asked after a finished turn continues the same conversation, so follow-ups like "a cheaper one?" refer to the previous answer. "New chat", a reload or a failed turn starts a new conversation.

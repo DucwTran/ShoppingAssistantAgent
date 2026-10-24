@@ -2,8 +2,8 @@ import json
 
 from app.core.events import emit
 from app.core.structured import invoke_structured
-from app.graph.nodes.metadata import language_name
 from app.graph.state import ShoppingState
+from app.prompts.language import language_name
 from app.prompts.understand_prompt import UNDERSTAND_SYSTEM_PROMPT
 from app.schemas.understanding import QueryUnderstanding
 from app.tools.currency import UnsupportedCurrencyError, convert_currency

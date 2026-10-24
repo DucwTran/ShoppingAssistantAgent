@@ -41,6 +41,11 @@ def _condense(result: dict) -> dict:
     return result
 
 
+def page_text(result: dict) -> str:
+    """Everything a search result says about its page: what prices and specs are verified against."""
+    return f"{result.get('title') or ''}\n{result.get('content') or ''}\n{result.get('price_listing') or ''}"
+
+
 def _run(query: str, include_domains: list[str] | None) -> list[dict]:
     # langchain-tavily posts without a timeout, so a stalled connection would hold the request forever.
     # Waiting is bounded here; the abandoned call finishes or fails in its pool thread.

@@ -5,33 +5,16 @@ from app.graph.state import ShoppingState
 
 
 def _build_approval_payload(state: ShoppingState) -> dict:
-    return {
-        "recommendation": state.get("recommendation"),
-        "quality_score": state.get("quality_score"),
-        "evaluation_feedback": state.get("evaluation_feedback"),
-    }
-
-
-def request_approval_node(state: ShoppingState) -> dict:
-    """Announce that a recommendation is waiting for the user's decision.
-
-    Kept out of human_approval_node on purpose: resuming re-runs the interrupted node from its first
-    line, so a side effect placed before interrupt() would happen again on every resume. In its own
-    node it runs once; the checkpoint written after it means a resume never re-enters it.
-    """
-    recommendation = state.get("recommendation") or {}
-    emit(
-        "hitl_required",
-        "Recommendation awaiting human approval",
-        node="request_approval",
-        product=recommendation.get("product_name"),
-        quality_score=state.get("quality_score"),
-    )
-    return {}
+    return {"recommendation": state.get("recommendation")}
 
 
 def human_approval_node(state: ShoppingState) -> dict:
-    """Pause for the user's decision. Everything before interrupt() runs again on resume, so it must stay side-effect free."""
+    """Pause for the user's decision.
+
+    Resuming re-runs this node from its first line, so everything before interrupt() runs again and
+    must stay side-effect free: an event emitted there would be sent twice. The client learns of the
+    pause from the response status, so nothing needs announcing before it.
+    """
     # Resume contract: Command(resume={"approved": bool, "feedback": str | None})
     resumed = interrupt(_build_approval_payload(state))
     approved = bool(resumed.get("approved"))

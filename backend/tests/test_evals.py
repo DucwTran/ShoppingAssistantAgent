@@ -17,7 +17,6 @@ _STATE = {
     "products": [{"name": "A", "source_url": "https://a.vn/a"}],
     "recommendation": {"product_name": "A", "price": 26_000_000, "url": "https://a.vn/a",
                        "tradeoffs": ["Vượt ngân sách 1 triệu"]},
-    "quality_score": 0.8,
 }
 _EVENTS = [
     {"event": "tool_called", "tool": "web_search"},
@@ -25,7 +24,6 @@ _EVENTS = [
      "output_tokens": 150},
     {"event": "node_measured", "node": "recommend", "failed": False, "duration_ms": 100, "input_tokens": 300,
      "output_tokens": 50},
-    {"event": "evaluator_done", "purpose_fit": 0.9},
 ]
 
 
@@ -81,7 +79,7 @@ def test_injection_violations_check_nested_fields_case_insensitively():
 
 def test_score_case_checks_labels_and_answer_quality():
     row = score_case(_case(intent="shopping", budget_vnd=25_000_000, tools=["web_search"], product=True),
-                     _STATE, _EVENTS, latency_s=12.0, error=None)
+                     _STATE, _EVENTS, latency_s=12.0, error=None, judgement={"purpose_fit": 0.9, "feedback": "ok"})
 
     assert row["passed"] is True
     assert row["checks"] == {"intent": True, "budget": True, "tools": True, "product": True, "reroute": None,
@@ -89,7 +87,7 @@ def test_score_case_checks_labels_and_answer_quality():
     assert row["grounded"] is True and row["price_known"] is True
     assert row["budget_honest"] is True  # over budget, but disclosed in tradeoffs
     assert row["nodes"]["recommend"] == {"ms": 1000, "input_tokens": 1500, "output_tokens": 200}
-    assert row["tokens"] == 1700 and row["purpose_fit"] == 0.9
+    assert row["tokens"] == 1700 and row["purpose_fit"] == 0.9 and row["judge_feedback"] == "ok"
     assert row["candidates"] == 1 and row["tradeoffs"] == ["Vượt ngân sách 1 triệu"]
 
 
@@ -167,10 +165,28 @@ def test_judge_agreement_needs_a_decisive_score():
 # --- harness, offline -----------------------------------------------------------------------------
 
 
-def test_run_case_offline_collects_node_measurements(fake_pipeline):
+def test_run_case_offline_collects_node_measurements_and_judges_the_answer(fake_pipeline):
     row = run_case(build_graph(), _case(intent="shopping", budget_vnd=25_000_000, product=True))
     assert row["passed"] is True, row
-    assert {"understand", "research_agent", "extract_products", "recommend", "evaluator"} <= set(row["nodes"])
+    assert {"understand", "research_agent", "extract_products", "recommend"} <= set(row["nodes"])
+    assert row["purpose_fit"] == 0.9  # from the eval's own judge call, not from the graph
+
+
+def test_judge_reads_the_specs_of_the_named_product_when_a_page_lists_several(fake_pipeline):
+    from evals.judge import judge_purpose
+
+    page = "https://shop.vn/gaming"
+    state = {"query": "laptop gaming", "products": [{"name": "Cheap", "gpu": "unknown", "source_url": page},
+                                                    {"name": "B", "gpu": "RTX 4050", "source_url": page}],
+             "recommendation": {"product_name": "B", "url": page}}
+    judge_purpose(state)
+    assert fake_pipeline.payloads["PurposeJudgement"]["recommended_product_specs"]["gpu"] == "RTX 4050"
+
+
+def test_general_chat_is_not_judged(fake_pipeline):
+    fake_pipeline.is_shopping = False
+    row = run_case(build_graph(), {"id": "g", "kind": "general", "query": "hi", "expect": {"intent": "general"}})
+    assert row["purpose_fit"] is None and "PurposeJudgement" not in fake_pipeline.calls
 
 
 def test_run_case_offline_reports_an_answer_emptied_by_the_price_filter(fake_pipeline):

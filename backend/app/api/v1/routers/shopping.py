@@ -9,7 +9,6 @@ from langgraph.types import Command
 from app.api.dependencies import get_graph
 from app.api.rate_limit import rate_limit
 from app.api.v1.schemas.shopping import QueryRequest, ResumeRequest, ShoppingResponse, ShoppingResultData
-from app.core.config import settings
 from app.core.errors import to_app_error
 from app.guards.input_guard import validate_input
 
@@ -25,18 +24,11 @@ def _response_from_state(graph, thread_id: str) -> ShoppingResponse:
     snapshot = graph.get_state(_config(thread_id))
 
     if snapshot.interrupts:
-        payload = snapshot.interrupts[0].value
-        data = ShoppingResultData(quality_threshold=settings.quality_threshold, **payload)
+        data = ShoppingResultData(**snapshot.interrupts[0].value)
         return ShoppingResponse(thread_id=thread_id, status="pending_approval", data=data)
 
     values = snapshot.values
-    data = ShoppingResultData(
-        recommendation=values.get("recommendation"),
-        quality_score=values.get("quality_score"),
-        quality_threshold=settings.quality_threshold,
-        evaluation_feedback=values.get("evaluation_feedback"),
-        general_reply=values.get("general_reply"),
-    )
+    data = ShoppingResultData(recommendation=values.get("recommendation"), general_reply=values.get("general_reply"))
     status = "rejected" if values.get("human_approval") is False else "done"
     return ShoppingResponse(thread_id=thread_id, status=status, data=data)
 

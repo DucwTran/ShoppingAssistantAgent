@@ -5,7 +5,6 @@ const NODE_LABELS: Record<string, string> = {
   research_agent: "Tìm kiếm sản phẩm",
   extract_products: "Trích xuất thông tin sản phẩm",
   recommend: "Chọn sản phẩm phù hợp",
-  evaluator: "Đánh giá chất lượng",
   feedback_router: "Xử lý góp ý",
 }
 

@@ -2,9 +2,9 @@ import json
 
 from app.core.events import emit
 from app.core.structured import invoke_structured
-from app.graph.nodes.metadata import language_name
 from app.graph.state import ShoppingState, question_of, requirements_of
 from app.guards.recommendation_guard import disclose_budget_overrun
+from app.prompts.language import language_name
 from app.prompts.recommend_prompt import RECOMMEND_SYSTEM_PROMPT
 from app.schemas.recommendation import NO_PRODUCT, Recommendation, RecommendationChoice
 from app.tools.compare import price_extremes
