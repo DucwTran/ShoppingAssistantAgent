@@ -6,7 +6,7 @@ FastAPI service that runs the LangGraph pipeline. Architecture overview: [../REA
 
 ```bash
 python -m venv .venv && ./.venv/Scripts/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime dependencies + pytest
 cp .env.example .env
 python -m app.rag.vectorstore     # build the knowledge index (re-run when data/knowledge/ changes)
 ```
@@ -20,12 +20,17 @@ python -m app.cli "laptop dưới 25 triệu cho lập trình AI và gaming"  # 
 
 ## Configuration
 
-Read from `.env`.
+Read from the environment, then `.env`. Invalid values stop the process at startup.
 
 | Variable | Default | Description |
 |---|---|---|
-| `TAVILY_API_KEY` | – | Web search |
-| `GEMMA_API_KEY_1`, `GEMMA_API_KEY_2`, ... | – | Google AI Studio keys, used in numeric order |
+| `TAVILY_API_KEY` | – | Web search (required) |
+| `GEMMA_API_KEY_1`, `GEMMA_API_KEY_2`, ... | – | Google AI Studio keys, used in numeric order (at least one required) |
+| `APP_ENV` | `development` | `production` refuses to start when a required key is missing; `development` only warns |
+| `LOG_FORMAT` | `text` | `json`: one JSON object per line with `request_id`, `thread_id`, `node`, `event` |
+| `DATA_DIR` | `./data` | Checkpoint database and knowledge index |
+| `CORS_ORIGINS` | Vite dev origins | JSON list of browser origins allowed to call the API directly |
+| `WEB_SEARCH_TIMEOUT_SECONDS` | `30` | Limit on one Tavily call (Gemini calls have their own 60 s limit) |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Chat model |
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-001` | Embedding model |
 | `CHECKPOINT_TTL_HOURS` | `24` | Idle conversations older than this are deleted |
@@ -33,6 +38,15 @@ Read from `.env`.
 | `RATE_LIMIT_PER_MINUTE` | `10` | Requests per client in any 60 s |
 
 Other tunables (search domains, tool-call limit, rejection cap, chunk size) live in `app/core/config.py`.
+
+## Operations
+
+| Endpoint | Returns |
+|---|---|
+| `GET /health/live` | `200` while the process serves requests |
+| `GET /health/ready` | `200` when the checkpoint database answers and the knowledge index exists; otherwise `503` with the failing check. Makes no LLM or search call |
+
+Every response carries `X-Request-ID` (the caller's, if well-formed, else a new one). Every log line written while serving a request includes it, along with one access line per request (`event=request`, status, duration). Health checks are not logged.
 
 ## API
 

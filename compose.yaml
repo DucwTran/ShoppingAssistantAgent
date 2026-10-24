@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      APP_ENV: production
+      LOG_FORMAT: json
+      DATA_DIR: /data
+      # The browser calls the API through the frontend's origin, so no cross-origin access is allowed
+      CORS_ORIGINS: "[]"
+    volumes:
+      - app-data:/data
+    # No published port: only the frontend's nginx reaches the API, which is what makes trusting
+    # its forwarded headers safe
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # Checkpoint database and knowledge index
+  app-data:

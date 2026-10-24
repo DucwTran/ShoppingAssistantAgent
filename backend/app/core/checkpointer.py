@@ -6,7 +6,9 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-CHECKPOINT_DB = Path(__file__).resolve().parents[2] / "data" / "checkpoints.sqlite"
+from app.core.config import settings
+
+CHECKPOINT_DB = settings.data_dir / "checkpoints.sqlite"
 
 
 @contextmanager

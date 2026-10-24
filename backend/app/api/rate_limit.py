@@ -14,9 +14,9 @@ class SlidingWindowLimiter:
     """At most `settings.rate_limit_per_minute` requests per client in any 60-second span.
 
     Kept in memory, so the count is per process: enough for the single-process deployment this app
-    targets. Behind a reverse proxy every request comes from the proxy's address, so the client must
-    then be read from the forwarded header the proxy sets. A client that stops sending keeps a small
-    entry until restart, which is acceptable at this scale.
+    targets. Behind the frontend's nginx, uvicorn runs with --proxy-headers, which replaces the
+    proxy's address in `request.client` with the client's from X-Forwarded-For. A client that stops
+    sending keeps a small entry until restart, which is acceptable at this scale.
     """
 
     def __init__(self, clock=time.monotonic):

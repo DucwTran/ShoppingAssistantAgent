@@ -1,9 +1,14 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from functools import lru_cache
 
 from langchain_tavily import TavilySearch
 
 from app.core.config import settings
+
+# Price lookups run up to 6 searches at once on top of the agent's own
+_search_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="web-search")
 
 # A thousands-grouped amount with a VND marker, e.g. "19.290.000đ", "27,490,000 VNĐ"
 PRICE_PATTERN = re.compile(r"\d{1,3}(?:[.,]\d{3}){2}\s*(?:đ|₫|VNĐ|VND)", re.IGNORECASE)
@@ -37,7 +42,13 @@ def _condense(result: dict) -> dict:
 
 
 def _run(query: str, include_domains: list[str] | None) -> list[dict]:
-    result = _client().invoke({"query": query, "include_domains": include_domains})
+    # langchain-tavily posts without a timeout, so a stalled connection would hold the request forever.
+    # Waiting is bounded here; the abandoned call finishes or fails in its pool thread.
+    future = _search_pool.submit(_client().invoke, {"query": query, "include_domains": include_domains})
+    try:
+        result = future.result(timeout=settings.web_search_timeout_seconds)
+    except FutureTimeout:
+        raise TimeoutError(f"Web search did not answer within {settings.web_search_timeout_seconds:.0f} s") from None
     results = result.get("results", []) if isinstance(result, dict) else result
     return [_condense(r) for r in results]
 

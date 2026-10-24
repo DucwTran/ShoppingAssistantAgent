@@ -1,14 +1,20 @@
 import shutil
+import sys
 from functools import lru_cache
-from pathlib import Path
 
 from langchain_qdrant import QdrantVectorStore
 
+from app.core.config import settings
 from app.rag.embeddings import get_embeddings
 from app.rag.ingestion import load_and_chunk
 
-QDRANT_PATH = Path(__file__).resolve().parents[2] / "data" / "qdrant_local"
+QDRANT_PATH = settings.data_dir / "qdrant_local"
 COLLECTION_NAME = "laptop_knowledge"
+
+
+def index_exists() -> bool:
+    """Whether the knowledge index has been built, read from the storage layout without opening it."""
+    return (QDRANT_PATH / "collection" / COLLECTION_NAME).is_dir()
 
 
 @lru_cache(maxsize=1)
@@ -43,6 +49,10 @@ def build_index() -> QdrantVectorStore:
 
 
 if __name__ == "__main__":
-    store = build_index()
-    count = store.client.count(COLLECTION_NAME).count
-    print(f"Index built at {QDRANT_PATH} — {count} points in collection '{COLLECTION_NAME}'.")
+    # --if-missing: used at container start, where rebuilding on every restart would spend embedding quota
+    if "--if-missing" in sys.argv and index_exists():
+        print(f"Index already present at {QDRANT_PATH}; not rebuilt.")
+    else:
+        store = build_index()
+        count = store.client.count(COLLECTION_NAME).count
+        print(f"Index built at {QDRANT_PATH} — {count} points in collection '{COLLECTION_NAME}'.")

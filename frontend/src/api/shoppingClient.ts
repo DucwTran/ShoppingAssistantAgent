@@ -7,7 +7,9 @@ import type {
   StreamErrorFrame,
 } from "../types/shopping"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000"
+// Empty in a production build: the API is served from the same origin, proxied by nginx under /api.
+// The dev server points it at the local backend (.env.development).
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ""
 
 export class ApiError extends Error {
   status: number

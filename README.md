@@ -55,6 +55,7 @@ flowchart TD
 | Persistence | SQLite checkpointer |
 | Backend | FastAPI, Pydantic |
 | Frontend | React, TypeScript, Vite, Tailwind CSS |
+| Packaging | Docker Compose: backend (uvicorn) and frontend (nginx), one volume |
 | Tests | pytest with a fake LLM; live tests and an eval script against real services |
 
 ## Getting started
@@ -65,7 +66,7 @@ Requires Python 3.11, Node.js, a [Tavily](https://tavily.com) key and at least o
 # backend
 cd backend
 python -m venv .venv && ./.venv/Scripts/activate   # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env                                # set TAVILY_API_KEY, GEMMA_API_KEY_1, ...
 python -m app.rag.vectorstore                       # build the knowledge index
 uvicorn app.main:app --reload                       # http://127.0.0.1:8000
@@ -75,6 +76,21 @@ cd frontend
 npm install
 npm run dev                                         # http://localhost:5173
 ```
+
+## Running with Docker
+
+```bash
+cp backend/.env.example backend/.env   # set the keys
+docker compose up -d --build           # http://localhost:8080
+docker compose logs -f backend         # JSON logs
+```
+
+| Container | Role |
+|---|---|
+| `frontend` | nginx: serves the built app and proxies `/api` to the backend (SSE unbuffered, 300 s read timeout, 16 KB body limit); the only published port |
+| `backend` | uvicorn, one worker, non-root; `APP_ENV=production`, JSON logs. Builds the knowledge index on first start |
+
+Runtime state (checkpoints, knowledge index) is kept in the `app-data` volume. Check readiness with `docker compose exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read())"`.
 
 ## Testing
 
@@ -104,7 +120,9 @@ backend/
   evals/        evaluation script and query set
   tests/
 frontend/src/   chat UI, SSE client, conversation state
+frontend/nginx.conf   static files and /api proxy in the container
 docs/           evaluation guide
+compose.yaml    the two containers and the data volume
 ```
 
 ## Design notes

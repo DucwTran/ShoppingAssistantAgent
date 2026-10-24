@@ -1,10 +1,13 @@
 import os
+from pathlib import Path
+from typing import Literal
 
 from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = ".env"
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 GEMINI_KEY_PREFIX = "GEMMA_API_KEY_"
 
 
@@ -20,7 +23,16 @@ def _gemini_api_keys() -> list[str]:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
+    # In production a missing required key stops the server at startup instead of failing every query
+    app_env: Literal["development", "production"] = "development"
+    # Runtime state: the checkpoint database and the knowledge index (a volume in a container)
+    data_dir: Path = _BACKEND_DIR / "data"
+    log_format: Literal["text", "json"] = "text"
+    # Browser origins allowed to call the API directly; behind the frontend's proxy requests are same-origin
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
     tavily_api_key: str = ""
+    web_search_timeout_seconds: float = 30.0
 
     # Gemini via Google AI Studio; requests rotate through the keys when one is exhausted or rejected
     gemini_api_keys: list[str] = Field(default_factory=_gemini_api_keys)
