@@ -1,12 +1,10 @@
-"""Run the graph on the labeled query set and report accuracy, grounding, latency and token usage.
+"""Run the graph on the labeled query set and report the eight eval metrics.
 
 Usage (from backend/):
-    python -m evals.run_eval [--kind shopping|knowledge|general|followup|multiturn] [--case ID] [--limit N] [--repeat N]
+    python -m evals.run_eval [--kind shopping|knowledge|general] [--case ID] [--limit N]
 
-Calls the real Gemini API and Tavily. Each run stops at the human-approval pause; a "followup" case
-first rejects the recommendation with its `reject_with` feedback, and a "multiturn" case accepts it
-and asks its `then` question in the same conversation. Labels live in cases.json and the metrics are
-described in docs/eval.md.
+Calls the real Gemini API and Tavily. Each run stops at the human-approval pause. Labels live in
+cases.json and the metrics are described in docs/eval.md.
 """
 
 import argparse
@@ -15,11 +13,8 @@ import math
 import statistics
 import time
 import uuid
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-
-from langgraph.types import Command
 
 from app.core.config import settings
 from app.graph.graph import build_graph
@@ -27,91 +22,51 @@ from app.schemas.recommendation import NO_PRODUCT
 from evals.judge import judge_purpose
 
 _HERE = Path(__file__).parent
+_KINDS = ("shopping", "knowledge", "general")
 _BUDGET_WORDS = ("budget", "ngân sách")
-_CHECKS = ("intent", "budget", "tools", "product", "reroute", "previous_price", "previous_product")
+# Summary metric -> the per-run check it is the rate of
+_RATES = {"intent_accuracy": "intent", "budget_accuracy": "budget", "tool_accuracy": "tools",
+          "grounded_rate": "grounded", "budget_compliance": "budget_compliant"}
 
 
 # --- running --------------------------------------------------------------------------------------
 
 
-def _stream(graph, graph_input, config) -> tuple[list[dict], float, str | None]:
-    """Run one graph turn, collecting its progress events; returns (events, seconds, error)."""
+def run_case(graph, case: dict) -> dict:
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     events: list[dict] = []
     started = time.perf_counter()
     try:
-        events.extend(graph.stream(graph_input, config, stream_mode="custom"))
+        events.extend(graph.stream({"query": case["query"]}, config, stream_mode="custom"))
         error = None
     except Exception as exc:  # noqa: BLE001 - recorded as a failed case, the run continues
         error = f"{type(exc).__name__}: {exc}"
-    return events, round(time.perf_counter() - started, 1), error
-
-
-def run_case(graph, case: dict) -> dict:
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    events, latency, error = _stream(graph, {"query": case["query"]}, config)
-
-    followup = None
-    if case.get("reject_with") and not error and graph.get_state(config).interrupts:
-        resume = Command(resume={"approved": False, "feedback": case["reject_with"]})
-        followup_events, followup_latency, error = _stream(graph, resume, config)
-        events += followup_events
-        followup = {
-            "latency_s": followup_latency,
-            "new_search": graph.get_state(config).values.get("research_hint") is not None,
-        }
-    elif case.get("then") and not error and graph.get_state(config).interrupts:
-        # Accept the first answer, then ask the follow-up question in the same conversation
-        previous = graph.get_state(config).values.get("recommendation") or {}
-        approve_events, _, error = _stream(graph, Command(resume={"approved": True, "feedback": None}), config)
-        events += approve_events
-        followup = {"latency_s": None, "previous": previous}
-        if not error:
-            then_events, followup["latency_s"], error = _stream(graph, {"query": case["then"]}, config)
-            events += then_events
+    latency = round(time.perf_counter() - started, 1)
 
     state = graph.get_state(config).values
     judgement = _judge(state) if error is None and state.get("intent") == "shopping" else None
-    return score_case(case, state, events, latency, error, followup, judgement)
+    return score_case(case, state, events, latency, error, judgement)
 
 
 def _judge(state: dict) -> dict | None:
     """The LLM judge's view of the final answer; None if the judge call itself fails, which is not the case's fault."""
     try:
         return judge_purpose(state).model_dump()
-    except Exception:  # noqa: BLE001 - a judge outage leaves purpose_fit unknown for this case
+    except Exception as exc:  # noqa: BLE001 - a judge outage leaves purpose_fit unknown for this case
+        print(f"judge failed: {type(exc).__name__}: {str(exc)[:200]}")
         return None
 
 
 # --- scoring (pure, unit-tested offline) ----------------------------------------------------------
 
 
-def _node_usage(events: list[dict]) -> dict[str, dict]:
-    nodes: dict[str, dict] = defaultdict(lambda: {"ms": 0, "input_tokens": 0, "output_tokens": 0})
-    for event in events:
-        if event["event"] == "node_measured":
-            for key, field in (("ms", "duration_ms"), ("input_tokens", "input_tokens"), ("output_tokens", "output_tokens")):
-                nodes[event["node"]][key] += event[field]
-    return dict(nodes)
+def _checks(expect: dict, state: dict, tools_called: set[str]) -> dict[str, bool | None]:
+    """Pass/fail per check; None means it does not apply to this run.
 
-
-def _price_filter(events: list[dict]) -> dict[str, int | bool]:
-    """What the verified-price filter did, summed over extractions (a followup can extract twice)."""
-    extractions = [e for e in events if e["event"] == "products_extracted"]
-    dropped = sum(e.get("dropped_no_price", 0) for e in extractions)
-    return {
-        "priced_by_lookup": sum(e.get("priced_by_lookup", 0) for e in extractions),
-        "dropped_no_price": dropped,
-        # Products were found, but none had a price, so the answer became N/A because of the filter
-        "emptied_by_price_filter": bool(extractions) and extractions[-1]["products"] == 0
-        and extractions[-1].get("dropped_no_price", 0) > 0,
-    }
-
-
-def _checks(expect: dict, state: dict, tools_called: set[str], followup: dict | None) -> dict[str, bool | None]:
-    """Compare the run with the case's labels; None means the case does not label that aspect."""
-    recommendation = state.get("recommendation") or {}
-    checks: dict[str, bool | None] = dict.fromkeys(_CHECKS)
-
+    intent, budget and tools compare with the case's labels; grounded and budget_compliant hold for
+    every shopping answer.
+    """
+    checks: dict[str, bool | None] = dict.fromkeys(_RATES.values())
     if "intent" in expect:
         checks["intent"] = state.get("intent") == expect["intent"]
     if "budget_vnd" in expect:
@@ -120,53 +75,27 @@ def _checks(expect: dict, state: dict, tools_called: set[str], followup: dict | 
             actual, expected, rel_tol=0.01)
     if "tools" in expect:
         checks["tools"] = set(expect["tools"]) <= tools_called
-    if "product" in expect:
-        recommended = recommendation.get("product_name") not in (None, NO_PRODUCT)
-        checks["product"] = recommended == expect["product"]
-    if "new_search_after_reject" in expect:
-        checks["reroute"] = followup is not None and followup["new_search"] == expect["new_search_after_reject"]
 
-    # Multi-turn: the follow-up must build on the first answer
-    previous = (followup or {}).get("previous") or {}
-    if "budget_below_previous_price" in expect:
-        price, budget = previous.get("price"), state.get("budget")
-        checks["previous_price"] = price is not None and budget is not None and budget < price
-    if "mentions_previous_product" in expect:
-        # Brand and line ("ASUS Vivobook") are what a rewrite keeps even when it drops the SKU
-        name = " ".join((previous.get("product_name") or "").split()[:2]).lower()
-        checks["previous_product"] = bool(name) and previous.get("product_name") != NO_PRODUCT \
-            and name in (state.get("standalone_query") or "").lower()
-    return checks
-
-
-def _answer_quality(state: dict) -> dict[str, bool | None]:
-    """Properties every shopping answer should have, whatever the case; None when not applicable."""
     if state.get("intent") != "shopping":
-        return {"grounded": None, "price_known": None, "budget_honest": None}
-
+        return checks
     recommendation = state.get("recommendation") or {}
     web_urls = {r["url"] for r in state.get("web_results", [])}
     url = recommendation.get("url")
-    grounded = all(p["source_url"] in web_urls for p in state.get("products", [])) and (not url or url in web_urls)
+    checks["grounded"] = all(p["source_url"] in web_urls for p in state.get("products", [])) and (
+        not url or url in web_urls)
 
-    has_product = recommendation.get("product_name") not in (None, NO_PRODUCT)
     price, budget = recommendation.get("price"), state.get("budget")
-    budget_honest = None
-    if has_product and price is not None and budget:
+    if recommendation.get("product_name") not in (None, NO_PRODUCT) and price is not None and budget:
         disclosed = any(word in t.lower() for t in recommendation.get("tradeoffs", []) for word in _BUDGET_WORDS)
-        budget_honest = price <= budget or disclosed
-
-    return {"grounded": grounded, "price_known": (price is not None) if has_product else None,
-            "budget_honest": budget_honest}
+        checks["budget_compliant"] = price <= budget or disclosed
+    return checks
 
 
 def score_case(case: dict, state: dict, events: list[dict], latency_s: float, error: str | None,
-               followup: dict | None = None, judgement: dict | None = None) -> dict:
+               judgement: dict | None = None) -> dict:
     tools_called = {e["tool"] for e in events if e["event"] == "tool_called"}
-    checks = _checks(case.get("expect", {}), state, tools_called, followup)
-    nodes = _node_usage(events)
+    checks = _checks(case.get("expect", {}), state, tools_called)
     recommendation = state.get("recommendation") or {}
-
     return {
         "id": case["id"],
         "kind": case["kind"],
@@ -174,25 +103,15 @@ def score_case(case: dict, state: dict, events: list[dict], latency_s: float, er
         "error": error,
         "passed": error is None and all(v is not False for v in checks.values()),
         "checks": checks,
-        **_answer_quality(state),
+        "purpose_fit": judgement["purpose_fit"] if judgement else None,
+        "latency_s": latency_s,
+        # What to open when a check fails
         "intent": state.get("intent"),
         "tools_called": sorted(tools_called),
-        "fallback_used": any(e["event"] == "research_fallback" for e in events),
-        **_price_filter(events),
-        # Why a run degraded: warning events (e.g. research_agent_failed) and node attempts that failed and were retried
-        "warnings": sorted({e["event"] for e in events if e.get("status") == "warning" and e["event"] != "node_measured"}),
-        "failed_attempts": sum(1 for e in events if e["event"] == "node_measured" and e["failed"]),
         "product": recommendation.get("product_name"),
-        "candidates": len(state.get("products", [])),
-        # The model's own reasoning, so a surprising answer (e.g. N/A despite candidates) can be explained
-        "why_it_fits": recommendation.get("why_it_fits"),
+        "price": recommendation.get("price"),
         "tradeoffs": recommendation.get("tradeoffs"),
-        "purpose_fit": judgement["purpose_fit"] if judgement else None,
         "judge_feedback": judgement["feedback"] if judgement else None,
-        "latency_s": latency_s,
-        "followup_latency_s": followup["latency_s"] if followup else None,
-        "tokens": sum(n["input_tokens"] + n["output_tokens"] for n in nodes.values()),
-        "nodes": nodes,
     }
 
 
@@ -204,11 +123,6 @@ def _rate(values) -> str | None:
     return f"{sum(known) / len(known):.0%} ({sum(known)}/{len(known)})" if known else None
 
 
-def _mean(values) -> float | None:
-    known = [v for v in values if v is not None]
-    return round(statistics.mean(known), 2) if known else None
-
-
 def _percentile(values: list[float], q: float) -> float | None:
     """Nearest-rank percentile: with few runs it reports an observed value instead of interpolating."""
     if not values:
@@ -218,51 +132,22 @@ def _percentile(values: list[float], q: float) -> float | None:
 
 
 def summarize(rows: list[dict]) -> dict:
-    # A provider outage says nothing about answer quality: quality metrics use completed runs only,
-    # while `errors` and `passed` still count every run.
+    # A provider outage says nothing about answer quality: the error rate counts every run, every
+    # other metric counts completed runs only.
     completed = [r for r in rows if r["error"] is None]
     researched = [r for r in completed if r["intent"] == "shopping"]
-
-    per_node: dict[str, dict] = {}
-    for node in sorted({n for r in researched for n in r["nodes"]}):
-        usages = [r["nodes"][node] for r in researched if node in r["nodes"]]
-        per_node[node] = {key: round(statistics.mean(u[key] for u in usages)) for key in ("ms", "input_tokens", "output_tokens")}
-
-    recovered = sum(r["priced_by_lookup"] for r in researched)
-    priceless = recovered + sum(r["dropped_no_price"] for r in researched)
-
-    outcomes: dict[str, set[bool]] = defaultdict(set)
-    for row in rows:
-        outcomes[row["id"]].add(row["passed"])
-
+    fits = [r["purpose_fit"] for r in researched if r["purpose_fit"] is not None]
+    latencies = [r["latency_s"] for r in researched]
     return {
         "model": settings.gemini_model,
         "runs": len(rows),
-        "cases": len(outcomes),
-        "errors": sum(r["error"] is not None for r in rows),
-        "failed_attempts": sum(r["failed_attempts"] for r in rows),
-        "passed": _rate(r["passed"] for r in rows),
-        "accuracy": {check: _rate(r["checks"][check] for r in completed) for check in _CHECKS},
-        "answer_quality": {
-            "grounded": _rate(r["grounded"] for r in completed),
-            "price_known": _rate(r["price_known"] for r in completed),
-            "budget_honest": _rate(r["budget_honest"] for r in completed),
-            "fallback_used": _rate(r["fallback_used"] for r in researched),
-            "mean_purpose_fit": _mean(r["purpose_fit"] for r in researched),
-        },
-        "price_filter": {
-            # Of the products extracted without a price, the share the second search found one for
-            "recovered_by_lookup": f"{recovered / priceless:.0%} ({recovered}/{priceless})" if priceless else None,
-            "dropped_no_price": priceless - recovered,
-            "answers_emptied": _rate(r["emptied_by_price_filter"] for r in researched),
-        },
-        "latency_s": {"p50": _percentile([r["latency_s"] for r in researched], 0.5),
-                      "p95": _percentile([r["latency_s"] for r in researched], 0.95)},
-        "mean_tokens_per_query": _mean(r["tokens"] for r in researched),
-        "per_node_mean": per_node,
-        "failed_cases": sorted({r["id"] for r in rows if not r["passed"]}),
-        # With --repeat: cases that passed in some runs and failed in others
-        "unstable_cases": sorted(case_id for case_id, seen in outcomes.items() if len(seen) > 1),
+        **{metric: _rate(r["checks"][check] for r in completed) for metric, check in _RATES.items()},
+        # Answers the judge failed to score are left out, so the mean says how many it covers
+        "answer_quality": {"mean": round(statistics.mean(fits), 2) if fits else None,
+                           "judged": f"{len(fits)}/{len(researched)}"},
+        "latency_s": {"p50": _percentile(latencies, 0.5), "p95": _percentile(latencies, 0.95)},
+        "error_rate": _rate(r["error"] is not None for r in rows),
+        "failed_cases": sorted(r["id"] for r in rows if not r["passed"]),
     }
 
 
@@ -277,17 +162,11 @@ def save_results(prefix: str, payload: dict) -> Path:
     return out_file
 
 
-def _failed_checks(row: dict) -> str:
-    failed = [name for name, ok in row["checks"].items() if ok is False]
-    return f" failed={','.join(failed)}" if failed else ""
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kind", choices=["shopping", "knowledge", "general", "followup", "multiturn"])
+    parser.add_argument("--kind", choices=_KINDS)
     parser.add_argument("--case", help="run only the case with this id")
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--repeat", type=int, default=1, help="run every case N times to expose unstable results")
     args = parser.parse_args()
 
     cases = json.loads((_HERE / "cases.json").read_text(encoding="utf-8"))
@@ -296,12 +175,12 @@ def main() -> None:
 
     graph = build_graph()
     rows = []
-    total = len(cases) * args.repeat
-    for index, case in enumerate([c for _ in range(args.repeat) for c in cases], 1):
+    for index, case in enumerate(cases, 1):
         row = run_case(graph, case)
         rows.append(row)
-        print(f"[{index}/{total}] {'PASS' if row['passed'] else 'FAIL'} {row['id']:<22} {row['latency_s']:>6}s "
-              f"{row['tokens']:>6} tok product={row['product']!r}{_failed_checks(row)}"
+        failed = [name for name, ok in row["checks"].items() if ok is False]
+        print(f"[{index}/{len(cases)}] {'PASS' if row['passed'] else 'FAIL'} {row['id']:<22} {row['latency_s']:>6}s "
+              f"product={row['product']!r}{' failed=' + ','.join(failed) if failed else ''}"
               f"{' err=' + row['error'] if row['error'] else ''}")
 
     summary = summarize(rows)

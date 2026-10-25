@@ -93,9 +93,8 @@ Errors use `{"error": {"code": str, "message": str}}`:
 ```bash
 pytest                    # offline suite (default; live tests excluded in pytest.ini)
 pytest -m live            # real services; skipped if keys are missing
-python -m evals.run_eval     # labeled query set; writes results to evals/results/
-python -m evals.check_judge      # LLM judge vs. hand-labeled recommendations
-python -m evals.check_injection  # prompt-injection attempts against the real nodes
+python -m evals.run_eval     # labeled query set, eight metrics; writes results to evals/results/
+python -m evals.check_judge  # LLM judge vs. hand-labeled recommendations
 ```
 
 See [../docs/eval.md](../docs/eval.md) for the dataset and metrics.
